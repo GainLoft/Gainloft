@@ -22,6 +22,7 @@ export async function POST(req: Request) {
     let totalSynced = 0;
     let totalSkipped = 0;
     let page = 0;
+    let firstError: string | undefined;
 
     while (page < maxPages) {
       const sp = new URLSearchParams();
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
           totalSynced++;
         } catch (err) {
           totalSkipped++;
-          console.error(`Sync skip ${e.slug}:`, (err as Error).message);
+          if (!firstError) firstError = `${e.slug}: ${(err as Error).message}`;
         }
       }
 
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
       if (events.length < pageSize) break;
     }
 
-    return NextResponse.json({ synced: totalSynced, skipped: totalSkipped, pages: page });
+    return NextResponse.json({ synced: totalSynced, skipped: totalSkipped, pages: page, firstError: firstError || null });
   } catch (err) {
     console.error('Sync error:', err);
     return NextResponse.json({ error: 'Sync failed' }, { status: 500 });
