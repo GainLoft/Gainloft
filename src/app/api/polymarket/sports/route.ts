@@ -160,7 +160,10 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
   const fetchByTag = async (tag: string): Promise<PMEvent[]> => {
     const allEvents: PMEvent[] = [];
     const pageSize = 100;
-    const maxPages = 10; // up to 1000 events per tag
+    // Fetch 3 pages (300 events) per tag — covers top matches by volume
+    // Deep coverage is handled by the background sync
+    const maxPages = 3;
+    const fetches: Promise<PMEvent[]>[] = [];
     for (let page = 0; page < maxPages; page++) {
       const sp = new URLSearchParams({
         tag_slug: tag,
@@ -172,18 +175,16 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
         ascending: 'false',
         end_date_min: windowStart,
       });
-      try {
-        const res = await fetch(`${GAMMA_API}/events?${sp}`, {
+      fetches.push(
+        fetch(`${GAMMA_API}/events?${sp}`, {
           cache: 'no-store',
           headers: { 'User-Agent': 'Mozilla/5.0' },
-        });
-        if (!res.ok) break;
-        const events: PMEvent[] = await res.json();
-        allEvents.push(...events);
-        if (events.length < pageSize) break; // no more pages
-      } catch {
-        break;
-      }
+        }).then(r => r.ok ? r.json() : []).catch(() => [] as PMEvent[])
+      );
+    }
+    const pages = await Promise.all(fetches);
+    for (const events of pages) {
+      allEvents.push(...events);
     }
     return allEvents;
   };
