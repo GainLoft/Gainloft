@@ -326,12 +326,31 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
 
   const responseData = { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}) };
 
-  // Cache processed response for ISR page (unfiltered first page only)
+  // Cache slimmed response for edge endpoint (unfiltered first page only)
   if (!sportFilter && !leagueFilter && offset === 0) {
+    const slimEvents = trimmed.map(e => ({
+      ...e,
+      description: null,
+      tags: e.tags?.slice(0, 3) || [],
+      markets: (e.markets || []).map(m => ({
+        id: m.id, condition_id: m.condition_id, question: m.question,
+        group_item_title: m.group_item_title, slug: m.slug,
+        description: null, category: m.category, tags: [],
+        image_url: null, resolution_source: null,
+        tokens: (m.tokens || []).map(t => ({
+          id: t.id, token_id: t.token_id, outcome: t.outcome, price: t.price,
+        })),
+        minimum_tick_size: m.minimum_tick_size, minimum_order_size: m.minimum_order_size,
+        active: m.active, closed: m.closed, resolved: m.resolved,
+        end_date_iso: m.end_date_iso, volume: m.volume,
+        liquidity: m.liquidity, neg_risk: m.neg_risk,
+      })),
+    }));
+    const slimData = { events: slimEvents, hasMore, total, ...(taxonomy ? { taxonomy } : {}) };
     pool.query(
       `INSERT INTO api_cache (key, data, updated_at) VALUES ('sports_processed', $1::jsonb, NOW())
        ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
-      [JSON.stringify(responseData)]
+      [JSON.stringify(slimData)]
     ).catch(() => {});
   }
 
