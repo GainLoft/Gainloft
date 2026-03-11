@@ -24,7 +24,8 @@ export default function RootLayout({
       <head>
         <link rel="dns-prefetch" href="https://clob.polymarket.com" />
         <link rel="preconnect" href="https://polymarket-upload.s3.us-east-2.amazonaws.com" crossOrigin="anonymous" />
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var d=document.documentElement,t=localStorage.getItem('theme');if(t){d.setAttribute('data-theme',t);d.style.background=t==='dark'?'#131722':'#ffffff'}else if(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches){d.style.background='#131722'}}catch(e){}})()` }} />
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var d=document.documentElement,s=d.style,t=localStorage.getItem('theme'),dk=t==='dark'||((!t)&&window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches);if(t)d.setAttribute('data-theme',t);s.background=dk?'#131722':'#fff';s.colorScheme=dk?'dark':'light'}catch(e){}})()` }} />
+        <style dangerouslySetInnerHTML={{ __html: `body{opacity:0}body.ready{opacity:1;transition:opacity .15s ease-in}` }} />
       </head>
       <body className={`${inter.variable} ${outfit.variable} font-sans antialiased`} style={{ background: 'var(--bg)', color: 'var(--text-primary)' }}>
         <Providers>
@@ -33,6 +34,7 @@ export default function RootLayout({
           <main className="min-h-screen">{children}</main>
           <Footer />
         </Providers>
+        <script dangerouslySetInnerHTML={{ __html: `requestAnimationFrame(function(){document.body.classList.add('ready')})` }} />
       </body>
     </html>
   );
