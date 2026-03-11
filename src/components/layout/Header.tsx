@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import SearchDropdown from './SearchDropdown';
 import { CATEGORIES } from '@/lib/categories';
+import { useRainbowKitReady } from './Providers';
 
 const ALL_TABS = [
   { key: 'trending', label: 'Trending', href: '/' },
@@ -84,6 +85,7 @@ export default function Header() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchIdx, setSearchIdx] = useState(-1);
   const [mounted, setMounted] = useState(false);
+  const rkReady = useRainbowKitReady();
   const [menuOpen, setMenuOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [showRightFade, setShowRightFade] = useState(false);
@@ -310,7 +312,7 @@ export default function Header() {
 
         {/* Auth + Menu */}
         <div className="flex items-center flex-shrink-0" style={{ gap: 8 }}>
-          {mounted ? (
+          {rkReady ? (
             <ConnectButton.Custom>
               {({ account, chain, openConnectModal }) => {
                 const connected = account && chain;
