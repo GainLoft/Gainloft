@@ -4,28 +4,36 @@ import pool from '@/lib/db';
 export const maxDuration = 300; // 5 min for Pro plan
 export const preferredRegion = 'sin1';
 
-// GET = quick DB test
+// GET = mini sync test (5 events) with timing
 export async function GET() {
+  const log: string[] = [];
+  const t0 = Date.now();
   try {
-    const t0 = Date.now();
-    const { rows } = await pool.query('SELECT NOW() as time, current_database() as db');
-    const readMs = Date.now() - t0;
+    const { rows } = await pool.query('SELECT NOW() as time');
+    log.push(`db: ${Date.now() - t0}ms`);
 
+    const sp = new URLSearchParams({ tag_slug: 'sports', limit: '5', order: 'volume24hr', ascending: 'false', active: 'true' });
     const t1 = Date.now();
-    const { rows: writeTest } = await pool.query(
-      `INSERT INTO event_groups (polymarket_id, title, slug, category)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET title = EXCLUDED.title
-       RETURNING id`,
-      ['test-123', 'DB Write Test', 'db-write-test', 'Test']
-    );
-    const writeMs = Date.now() - t1;
+    const res = await fetch(`${GAMMA_API}/events?${sp}`, { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const events: any[] = await res.json();
+    log.push(`fetch: ${Date.now() - t1}ms, count: ${events.length}`);
 
-    await pool.query(`DELETE FROM event_groups WHERE polymarket_id = 'test-123'`);
+    let synced = 0;
+    for (const e of events) {
+      const te = Date.now();
+      const mktCount = (e.markets || []).length;
+      try {
+        await upsertEvent(e);
+        synced++;
+        log.push(`ok ${e.slug} (${mktCount}mkts): ${Date.now() - te}ms`);
+      } catch (err) {
+        log.push(`err ${e.slug} (${mktCount}mkts): ${(err as Error).message} (${Date.now() - te}ms)`);
+      }
+    }
 
-    return NextResponse.json({ ok: true, ...rows[0], readMs, writeMs, writeId: writeTest[0]?.id });
+    return NextResponse.json({ synced, total: `${Date.now() - t0}ms`, log });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 });
+    return NextResponse.json({ error: (err as Error).message, total: `${Date.now() - t0}ms`, log }, { status: 500 });
   }
 }
 
