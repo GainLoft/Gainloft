@@ -11,7 +11,7 @@ export async function generateStaticParams() {
 
 async function getCategoryData(tag: string): Promise<Market[]> {
   try {
-    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : (process.env.SITE_URL || 'http://localhost:3000');
+    const base = process.env.SITE_URL || 'https://gainloft.com';
     const res = await fetch(`${base}/api/polymarket/events/live?tag=${encodeURIComponent(tag)}&limit=24&offset=0`);
     if (!res.ok) return [];
     const data = await res.json();

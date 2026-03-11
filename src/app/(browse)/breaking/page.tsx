@@ -4,7 +4,7 @@ export const revalidate = 300;
 
 async function getBreakingData() {
   try {
-    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : (process.env.SITE_URL || 'http://localhost:3000');
+    const base = process.env.SITE_URL || 'https://gainloft.com';
     const res = await fetch(`${base}/api/polymarket/breaking`);
     if (!res.ok) return undefined;
     return await res.json();

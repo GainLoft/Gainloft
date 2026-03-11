@@ -12,7 +12,7 @@ interface SportsData {
 
 async function getSportsData(): Promise<SportsData> {
   try {
-    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : (process.env.SITE_URL || 'http://localhost:3000');
+    const base = process.env.SITE_URL || 'https://gainloft.com';
     const res = await fetch(`${base}/api/polymarket/sports?tab=live&offset=0&limit=30`);
     if (!res.ok) return { events: [], taxonomy: [], hasMore: false, total: 0 };
     const data = await res.json();
