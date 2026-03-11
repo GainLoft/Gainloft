@@ -3,6 +3,17 @@ import pool from '@/lib/db';
 
 export const maxDuration = 300; // 5 min for Pro plan
 
+// GET = quick DB test
+export async function GET() {
+  try {
+    const { rows } = await pool.query('SELECT NOW() as time, current_database() as db');
+    const { rows: tables } = await pool.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`);
+    return NextResponse.json({ ok: true, ...rows[0], tables: tables.map(t => t.tablename) });
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 });
+  }
+}
+
 /**
  * Bulk sync events from Polymarket gamma API into local DB.
  * Paginates through ALL events (100 per page) until exhausted.
