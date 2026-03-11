@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { fetchLivePrices } from '@/lib/polymarket';
 
+export const preferredRegion = 'sin1';
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();

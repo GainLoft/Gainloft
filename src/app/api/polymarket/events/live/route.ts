@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const preferredRegion = 'sin1';
+
 /**
  * Direct proxy to Polymarket gamma API — bypasses local DB.
  * Fetches ALL events with full pagination so nothing is missed.

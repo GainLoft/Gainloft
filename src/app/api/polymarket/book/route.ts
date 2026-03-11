@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const preferredRegion = 'sin1';
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const tokenId = url.searchParams.get('token_id');

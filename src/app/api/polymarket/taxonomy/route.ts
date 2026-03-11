@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const preferredRegion = 'sin1';
+
 /**
  * Fetches sidebar data from Polymarket by scraping __NEXT_DATA__ from category pages.
  * This gives us the exact same sidebar items, ordering, and counts as Polymarket.

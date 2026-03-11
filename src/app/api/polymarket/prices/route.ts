@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { fetchPriceHistory } from '@/lib/polymarket';
 
+export const preferredRegion = 'sin1';
+
 const PERIOD_MAP: Record<string, { interval: string; fidelity: number }> = {
   '1h':  { interval: '1h',  fidelity: 1 },
   '6h':  { interval: '6h',  fidelity: 5 },

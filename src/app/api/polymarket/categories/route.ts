@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { pmTagToLocalSlug } from '@/lib/categories';
 
+export const preferredRegion = 'sin1';
+
 /**
  * Returns the ordered list of Polymarket categories.
  * Scraped dynamically from Polymarket's __NEXT_DATA__ filteredTags query.

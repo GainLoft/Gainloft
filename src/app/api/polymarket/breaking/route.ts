@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const preferredRegion = 'sin1';
+
 /**
  * Proxies Polymarket's /api/biggest-movers endpoint directly.
  * This is the actual data source for their Breaking News page —

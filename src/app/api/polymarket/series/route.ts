@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const preferredRegion = 'sin1';
+
 /**
  * Returns active recurring series for display on browse pages.
  * Uses computed event slugs + gamma API to avoid downloading 10MB+ series responses.
