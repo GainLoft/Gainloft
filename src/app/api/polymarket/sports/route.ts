@@ -324,8 +324,19 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
   // Taxonomy was started in parallel at the top — await it now
   const taxonomy = await taxonomyPromise;
 
+  const responseData = { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}) };
+
+  // Cache processed response for ISR page (unfiltered first page only)
+  if (!sportFilter && !leagueFilter && offset === 0) {
+    pool.query(
+      `INSERT INTO api_cache (key, data, updated_at) VALUES ('sports_processed', $1::jsonb, NOW())
+       ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
+      [JSON.stringify(responseData)]
+    ).catch(() => {});
+  }
+
   return NextResponse.json(
-    { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}) },
+    responseData,
     { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' } }
   );
 }
