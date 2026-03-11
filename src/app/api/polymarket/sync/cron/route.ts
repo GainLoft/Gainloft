@@ -172,6 +172,14 @@ export async function GET(req: NextRequest) {
     } catch (cacheErr) {
       console.error('Sports cache precompute error:', cacheErr);
     }
+
+    // Warm the public API cache (Cloudflare + Vercel edge)
+    try {
+      const warmUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}/api/polymarket/sports?tab=live&offset=0&limit=30`
+        : null;
+      if (warmUrl) await fetch(warmUrl, { cache: 'no-store' });
+    } catch {}
   } catch (err) {
     return NextResponse.json({
       error: (err as Error).message,

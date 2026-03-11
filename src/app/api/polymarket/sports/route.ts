@@ -278,7 +278,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
       id: pmEvent.id,
       title: pmEvent.title,
       slug: pmEvent.slug,
-      description: pmEvent.description || null,
+      description: null,
       category: pmEvent.tags?.[0]?.label || 'Sports',
       tags: pmEvent.tags?.map(t => ({ slug: t.slug, label: t.label })) || [],
       image_url: pmEvent.image || null,
@@ -286,7 +286,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
       volume: pmEvent.volume || 0,
       liquidity: pmEvent.liquidity || 0,
       created_at: pmEvent.createdAt || pmEvent.creationDate || new Date().toISOString(),
-      markets: mappedMarkets,
+      markets: mappedMarkets.map(m => ({ ...m, description: null })),
       match: matchInfo,
     });
   }
@@ -692,13 +692,13 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
 
       rawEvents.push({
         id: pmEvent.id, title: pmEvent.title, slug: pmEvent.slug,
-        description: pmEvent.description || null,
+        description: null,
         category: pmEvent.tags?.[0]?.label || 'Sports',
         tags: pmEvent.tags?.map(t => ({ slug: t.slug, label: t.label })) || [],
         image_url: pmEvent.image || null, end_date_iso: pmEvent.endDate || null,
         volume: pmEvent.volume || 0, liquidity: pmEvent.liquidity || 0,
         created_at: pmEvent.createdAt || pmEvent.creationDate || new Date().toISOString(),
-        markets: mappedMarkets, match: matchInfo,
+        markets: mappedMarkets.map(m => ({ ...m, description: null })), match: matchInfo,
       });
     }
 
