@@ -8,7 +8,7 @@ import { Market } from '@/lib/types';
 import { CATEGORIES, getCategorySlug } from '@/lib/categories';
 import { useLiveMarkets } from '@/hooks/useLivePrices';
 
-const swrFetcher = (url: string) => fetch(url).then(r => r.json());
+const swrFetcher = (url: string) => fetch(url).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
 
 const ALL_MARKET_TAGS = ['All', ...CATEGORIES];
 
