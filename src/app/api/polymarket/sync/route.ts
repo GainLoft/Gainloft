@@ -100,6 +100,7 @@ export async function POST(req: Request) {
   }
 }
 
+// Shared upsert logic — imported from cron route pattern
 const MAX_MARKETS_PER_EVENT = 30;
 
 async function upsertEvent(e: any) {
@@ -117,15 +118,10 @@ async function upsertEvent(e: any) {
       INSERT INTO event_groups (polymarket_id, title, slug, description, category, tags, image_url, end_date_iso, volume, volume_24hr, liquidity, neg_risk)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
-        title = EXCLUDED.title,
-        slug = EXCLUDED.slug,
-        description = EXCLUDED.description,
-        tags = EXCLUDED.tags,
-        image_url = EXCLUDED.image_url,
-        volume = EXCLUDED.volume,
-        volume_24hr = EXCLUDED.volume_24hr,
-        liquidity = EXCLUDED.liquidity,
-        end_date_iso = EXCLUDED.end_date_iso
+        title = EXCLUDED.title, slug = EXCLUDED.slug, description = EXCLUDED.description,
+        tags = EXCLUDED.tags, image_url = EXCLUDED.image_url,
+        volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
+        liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso
       RETURNING id
     `, [
       e.id, e.title, e.slug,
@@ -137,126 +133,141 @@ async function upsertEvent(e: any) {
     eventGroupId = rows[0].id;
   }
 
+  // Batch upsert all markets
+  const mktValues: any[] = [];
+  const mktPlaceholders: string[] = [];
+  const cols = 22;
+  let pi = 1;
+
   for (const m of markets) {
-    await upsertMarket(m, e, tags, eventGroupId);
+    const baseSlug = m.slug || e.slug;
+    const ph = [];
+    for (let c = 0; c < cols; c++) ph.push(`$${pi++}`);
+    mktPlaceholders.push(`(${ph.join(',')})`);
+    mktValues.push(
+      m.id, m.conditionId || '', m.question,
+      m.groupItemTitle || null, m.description || null,
+      m.category || e.category || 'General', tags,
+      baseSlug, m.image || e.image || null,
+      m.resolutionSource || null,
+      m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
+      m.active !== false, m.closed || false,
+      !!m.closedTime, m.active !== false && !m.closed,
+      m.endDate || e.endDate || null,
+      parseFloat(m.volume) || 0, m.volume24hr || 0,
+      parseFloat(m.liquidity) || 0, e.negRisk || false,
+      eventGroupId,
+    );
   }
-}
 
-async function upsertMarket(m: any, e: any, tags: string, eventGroupId: string | null) {
-  // Use event slug for single-market events, market slug for multi-market
-  const baseSlug = m.slug || e.slug;
-
-  // Upsert market via polymarket_id
-  let rows: any[];
+  let marketRows: any[];
   try {
-    ({ rows } = await pool.query(`
+    ({ rows: marketRows } = await pool.query(`
       INSERT INTO markets (
         polymarket_id, condition_id, question, group_item_title, description,
         category, tags, slug, image_url, resolution_source,
         minimum_tick_size, minimum_order_size,
         active, closed, resolved, accepting_orders,
-        end_date_iso, volume, volume_24hr, liquidity, neg_risk,
-        event_group_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+        end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id
+      ) VALUES ${mktPlaceholders.join(',')}
       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
-        question = EXCLUDED.question,
-        group_item_title = EXCLUDED.group_item_title,
-        active = EXCLUDED.active,
-        closed = EXCLUDED.closed,
-        resolved = EXCLUDED.resolved,
-        accepting_orders = EXCLUDED.accepting_orders,
-        volume = EXCLUDED.volume,
-        volume_24hr = EXCLUDED.volume_24hr,
-        liquidity = EXCLUDED.liquidity,
-        end_date_iso = EXCLUDED.end_date_iso,
-        tags = EXCLUDED.tags,
-        event_group_id = EXCLUDED.event_group_id
-      RETURNING id
-    `, [
-    m.id, m.conditionId || '', m.question,
-    m.groupItemTitle || null, m.description || null,
-    m.category || e.category || 'General', tags,
-    baseSlug, m.image || e.image || null,
-    m.resolutionSource || null,
-    m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
-    m.active !== false, m.closed || false,
-    !!m.closedTime, m.active !== false && !m.closed,
-    m.endDate || e.endDate || null,
-    parseFloat(m.volume) || 0, m.volume24hr || 0,
-    parseFloat(m.liquidity) || 0, e.negRisk || false,
-    eventGroupId,
-  ]));
-  } catch (slugErr: any) {
-    // Slug conflict — retry with polymarket_id suffix
-    if (slugErr.code === '23505' && slugErr.constraint?.includes('slug')) {
-      ({ rows } = await pool.query(`
-        INSERT INTO markets (
-          polymarket_id, condition_id, question, group_item_title, description,
-          category, tags, slug, image_url, resolution_source,
-          minimum_tick_size, minimum_order_size,
-          active, closed, resolved, accepting_orders,
-          end_date_iso, volume, volume_24hr, liquidity, neg_risk,
-          event_group_id
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-        ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
-          question = EXCLUDED.question,
-          group_item_title = EXCLUDED.group_item_title,
-          active = EXCLUDED.active,
-          closed = EXCLUDED.closed,
-          resolved = EXCLUDED.resolved,
-          accepting_orders = EXCLUDED.accepting_orders,
-          volume = EXCLUDED.volume,
-          volume_24hr = EXCLUDED.volume_24hr,
-          liquidity = EXCLUDED.liquidity,
-          end_date_iso = EXCLUDED.end_date_iso,
-          tags = EXCLUDED.tags,
-          event_group_id = EXCLUDED.event_group_id
-        RETURNING id
-      `, [
-        m.id, m.conditionId || '', m.question,
-        m.groupItemTitle || null, m.description || null,
-        m.category || e.category || 'General', tags,
-        `${baseSlug}-${m.id.slice(0, 8)}`, m.image || e.image || null,
-        m.resolutionSource || null,
-        m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
-        m.active !== false, m.closed || false,
-        !!m.closedTime, m.active !== false && !m.closed,
-        m.endDate || e.endDate || null,
-        parseFloat(m.volume) || 0, m.volume24hr || 0,
-        parseFloat(m.liquidity) || 0, e.negRisk || false,
-        eventGroupId,
-      ]));
+        question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
+        active = EXCLUDED.active, closed = EXCLUDED.closed,
+        resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
+        volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
+        liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
+        tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id
+      RETURNING id, polymarket_id
+    `, mktValues));
+  } catch (err: any) {
+    if (err.code === '23505' && err.constraint?.includes('slug')) {
+      marketRows = [];
+      for (const m of markets) {
+        try {
+          const baseSlug = m.slug || e.slug;
+          const { rows } = await pool.query(`
+            INSERT INTO markets (
+              polymarket_id, condition_id, question, group_item_title, description,
+              category, tags, slug, image_url, resolution_source,
+              minimum_tick_size, minimum_order_size,
+              active, closed, resolved, accepting_orders,
+              end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+            ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
+              question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
+              active = EXCLUDED.active, closed = EXCLUDED.closed,
+              resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
+              volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
+              liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
+              tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id
+            RETURNING id, polymarket_id
+          `, [
+            m.id, m.conditionId || '', m.question,
+            m.groupItemTitle || null, m.description || null,
+            m.category || e.category || 'General', tags,
+            `${baseSlug}-${m.id.slice(0, 8)}`, m.image || e.image || null,
+            m.resolutionSource || null,
+            m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
+            m.active !== false, m.closed || false,
+            !!m.closedTime, m.active !== false && !m.closed,
+            m.endDate || e.endDate || null,
+            parseFloat(m.volume) || 0, m.volume24hr || 0,
+            parseFloat(m.liquidity) || 0, e.negRisk || false,
+            eventGroupId,
+          ]);
+          marketRows.push(rows[0]);
+        } catch { /* skip */ }
+      }
     } else {
-      throw slugErr;
+      throw err;
     }
   }
 
-  const marketDbId = rows[0].id;
+  const idMap = new Map<string, string>();
+  for (const row of marketRows) idMap.set(row.polymarket_id, row.id);
 
-  // Upsert tokens
-  const outcomes = parseField(m.outcomes, ['Yes', 'No']);
-  const prices = parseField(m.outcomePrices, []).map(Number);
-  const tokenIds = parseField(m.clobTokenIds, []);
+  // Batch upsert tokens
+  const tokenValues: any[] = [];
+  const tokenPlaceholders: string[] = [];
+  let tidx = 1;
 
-  for (let i = 0; i < outcomes.length; i++) {
-    const tokenId = tokenIds[i] || `${m.id}-${i}`;
-    // Upsert by (market_id, outcome); handle token_id conflicts too
+  for (const m of markets) {
+    const dbId = idMap.get(m.id);
+    if (!dbId) continue;
+    const outcomes = parseField(m.outcomes, ['Yes', 'No']);
+    const prices = parseField(m.outcomePrices, []).map(Number);
+    const tokenIds = parseField(m.clobTokenIds, []);
+    for (let i = 0; i < outcomes.length; i++) {
+      tokenPlaceholders.push(`($${tidx},$${tidx + 1},$${tidx + 2},$${tidx + 3},$${tidx + 4})`);
+      tokenValues.push(dbId, tokenIds[i] || `${m.id}-${i}`, outcomes[i], prices[i] || 0.5, m.groupItemTitle || null);
+      tidx += 5;
+    }
+  }
+
+  if (tokenPlaceholders.length > 0) {
     try {
       await pool.query(`
         INSERT INTO tokens (market_id, token_id, outcome, price, label)
-        VALUES ($1, $2, $3, $4, $5)
+        VALUES ${tokenPlaceholders.join(',')}
         ON CONFLICT (market_id, outcome) DO UPDATE SET
-          token_id = EXCLUDED.token_id,
-          price = EXCLUDED.price,
-          label = EXCLUDED.label
-      `, [marketDbId, tokenId, outcomes[i], prices[i] || 0.5, m.groupItemTitle || null]);
+          token_id = EXCLUDED.token_id, price = EXCLUDED.price, label = EXCLUDED.label
+      `, tokenValues);
     } catch (tokenErr: any) {
-      // token_id unique conflict — update existing instead
       if (tokenErr.code === '23505') {
-        await pool.query(`
-          UPDATE tokens SET price = $1, label = $2
-          WHERE market_id = $3 AND outcome = $4
-        `, [prices[i] || 0.5, m.groupItemTitle || null, marketDbId, outcomes[i]]);
+        for (const m of markets) {
+          const dbId = idMap.get(m.id);
+          if (!dbId) continue;
+          const outcomes = parseField(m.outcomes, ['Yes', 'No']);
+          const prices = parseField(m.outcomePrices, []).map(Number);
+          for (let i = 0; i < outcomes.length; i++) {
+            try {
+              await pool.query(
+                `UPDATE tokens SET price = $1, label = $2 WHERE market_id = $3 AND outcome = $4`,
+                [prices[i] || 0.5, m.groupItemTitle || null, dbId, outcomes[i]]
+              );
+            } catch { /* skip */ }
+          }
+        }
       }
     }
   }
