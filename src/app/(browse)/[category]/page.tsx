@@ -4,9 +4,14 @@ import { Market } from '@/lib/types';
 
 export const revalidate = 300;
 
+// Routes that have their own dedicated page.tsx (not handled by [category])
+const DEDICATED_ROUTES = new Set(['sports']);
+
 // Pre-render all known categories at build time → served from CDN, no function cold start
 export async function generateStaticParams() {
-  return Object.values(CATEGORY_MAP).map(slug => ({ category: slug }));
+  return Object.values(CATEGORY_MAP)
+    .filter(slug => !DEDICATED_ROUTES.has(slug))
+    .map(slug => ({ category: slug }));
 }
 
 async function getCategoryData(tag: string): Promise<Market[]> {
