@@ -1,20 +1,19 @@
+import pool from '@/lib/db';
 import SportsClient from './SportsClient';
 
-// ISR: pre-render page, serve from edge CDN (~20ms), revalidate every 30s
+// ISR: serve from edge CDN, revalidate every 30s in background
 export const revalidate = 30;
 
 async function getInitialData() {
-  const base = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : 'http://localhost:3000';
-
+  // Read precomputed cache directly from DB (no HTTP round-trip)
   try {
-    const res = await fetch(`${base}/api/polymarket/sports?tab=live&offset=0&limit=30`, {
-      next: { revalidate: 30 },
-    });
-    if (res.ok) return res.json();
-  } catch {}
-
+    const { rows } = await pool.query(
+      `SELECT data FROM api_cache WHERE key = 'sports_live' AND updated_at > NOW() - INTERVAL '15 minutes'`
+    );
+    if (rows.length > 0) return rows[0].data;
+  } catch {
+    // Table may not exist yet (created on first cron run)
+  }
   return null;
 }
 

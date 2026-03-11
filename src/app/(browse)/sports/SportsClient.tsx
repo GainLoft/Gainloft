@@ -471,7 +471,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   const [taxonomy, setTaxonomy] = useState<TaxonomyItem[]>(initialTaxonomy);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [total, setTotal] = useState(initialTotal);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(initialEvents.length === 0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const fetchingRef = useRef(false);
@@ -532,10 +532,10 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   /* ── Reset & fetch first page when filters change ── */
   const initialLoadRef = useRef(true);
   useEffect(() => {
-    // Skip initial fetch — we already have SSR data for the default tab
+    // Skip initial fetch only if we have SSR data for the default tab
     if (initialLoadRef.current) {
       initialLoadRef.current = false;
-      if (viewTab === 'live' && !activeFilter) return;
+      if (viewTab === 'live' && !activeFilter && initialEvents.length > 0) return;
     }
     setEvents([]);
     setHasMore(false);
