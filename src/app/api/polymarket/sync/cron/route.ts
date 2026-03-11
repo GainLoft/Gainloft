@@ -24,9 +24,9 @@ export async function GET(req: NextRequest) {
   let totalSynced = 0;
   let totalSkipped = 0;
   let totalPages = 0;
+  let totalResolved = 0;
+  let firstError: string | undefined;
 
-  // Use a single dedicated client for all writes (avoids pool exhaustion on transaction pooler)
-  const client = await pool.connect();
   try {
     for (const { tag, quickPages } of SPORT_TAGS) {
       const pageSize = 100;
@@ -50,10 +50,11 @@ export async function GET(req: NextRequest) {
 
           for (const e of events) {
             try {
-              await upsertEvent(client, e);
+              await upsertEvent(e);
               totalSynced++;
-            } catch {
+            } catch (err) {
               totalSkipped++;
+              if (!firstError) firstError = `${e.slug}: ${(err as Error).message}`;
             }
           }
 
@@ -66,13 +67,12 @@ export async function GET(req: NextRequest) {
     }
 
     // Resolution sync
-    let totalResolved = 0;
     try {
-      const { rows: activeMarkets } = await client.query(`
-        SELECT id, polymarket_id FROM markets
-        WHERE polymarket_id IS NOT NULL AND closed = false
-        ORDER BY created_at DESC LIMIT 200
-      `);
+      const { rows: activeMarkets } = await pool.query(
+        `SELECT id, polymarket_id FROM markets
+         WHERE polymarket_id IS NOT NULL AND closed = false
+         ORDER BY created_at DESC LIMIT 200`
+      );
       for (const market of activeMarkets) {
         try {
           const res = await fetch(
@@ -82,18 +82,22 @@ export async function GET(req: NextRequest) {
           if (!res.ok) continue;
           const pm = await res.json();
           if (pm.closed || !pm.active) {
-            await client.query(`
-              UPDATE markets SET closed = true, resolved = true, active = false, accepting_orders = false
-              WHERE id = $1
-            `, [market.id]);
+            await pool.query(
+              `UPDATE markets SET closed = true, resolved = true, active = false, accepting_orders = false
+               WHERE id = $1`,
+              [market.id]
+            );
             totalResolved++;
           }
         } catch { /* skip */ }
       }
     } catch { /* skip */ }
-
-  } finally {
-    client.release();
+  } catch (err) {
+    return NextResponse.json({
+      error: (err as Error).message,
+      totalSynced, totalSkipped, totalPages,
+      duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
+    }, { status: 500 });
   }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -103,13 +107,14 @@ export async function GET(req: NextRequest) {
     totalSkipped,
     totalResolved,
     totalPages,
+    firstError: firstError || null,
     duration: `${duration}s`,
   });
 }
 
-// ── Upsert logic (same as sync/route.ts but inline to avoid HTTP calls) ──
+// ── Upsert logic ──
 
-async function upsertEvent(client: any, e: any) {
+async function upsertEvent(e: any) {
   const markets = e.markets || [];
   if (markets.length === 0) return;
 
@@ -119,7 +124,7 @@ async function upsertEvent(client: any, e: any) {
   let eventGroupId: string | null = null;
 
   if (isMulti) {
-    const { rows } = await client.query(`
+    const { rows } = await pool.query(`
       INSERT INTO event_groups (polymarket_id, title, slug, description, category, tags, image_url, end_date_iso, volume, volume_24hr, liquidity, neg_risk)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
@@ -139,15 +144,15 @@ async function upsertEvent(client: any, e: any) {
   }
 
   for (const m of markets) {
-    await upsertMarket(client, m, e, tags, eventGroupId);
+    await upsertMarket(m, e, tags, eventGroupId);
   }
 }
 
-async function upsertMarket(client: any, m: any, e: any, tags: string, eventGroupId: string | null) {
+async function upsertMarket(m: any, e: any, tags: string, eventGroupId: string | null) {
   const baseSlug = m.slug || e.slug;
   let rows: any[];
   try {
-    ({ rows } = await client.query(`
+    ({ rows } = await pool.query(`
       INSERT INTO markets (
         polymarket_id, condition_id, question, group_item_title, description,
         category, tags, slug, image_url, resolution_source,
@@ -179,7 +184,7 @@ async function upsertMarket(client: any, m: any, e: any, tags: string, eventGrou
     ]));
   } catch (slugErr: any) {
     if (slugErr.code === '23505' && slugErr.constraint?.includes('slug')) {
-      ({ rows } = await client.query(`
+      ({ rows } = await pool.query(`
         INSERT INTO markets (
           polymarket_id, condition_id, question, group_item_title, description,
           category, tags, slug, image_url, resolution_source,
@@ -224,7 +229,7 @@ async function upsertMarket(client: any, m: any, e: any, tags: string, eventGrou
   for (let i = 0; i < outcomes.length; i++) {
     const tokenId = tokenIds[i] || `${m.id}-${i}`;
     try {
-      await client.query(`
+      await pool.query(`
         INSERT INTO tokens (market_id, token_id, outcome, price, label)
         VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (market_id, outcome) DO UPDATE SET
@@ -232,7 +237,7 @@ async function upsertMarket(client: any, m: any, e: any, tags: string, eventGrou
       `, [marketDbId, tokenId, outcomes[i], prices[i] || 0.5, m.groupItemTitle || null]);
     } catch (tokenErr: any) {
       if (tokenErr.code === '23505') {
-        await client.query(`
+        await pool.query(`
           UPDATE tokens SET price = $1, label = $2
           WHERE market_id = $3 AND outcome = $4
         `, [prices[i] || 0.5, m.groupItemTitle || null, marketDbId, outcomes[i]]);

@@ -21,21 +21,4 @@ pool.query = function (text: any, values?: any) {
   return _query(text, values);
 };
 
-// Also patch pool.connect() so individual clients use unnamed prepared statements
-const _connect = pool.connect.bind(pool);
-pool.connect = async function () {
-  const client = await _connect();
-  const _clientQuery = client.query.bind(client);
-  client.query = function (text: any, values?: any) {
-    if (typeof text === 'string') {
-      return _clientQuery({ text, values, name: '' });
-    }
-    if (text && typeof text === 'object' && text.text) {
-      return _clientQuery({ ...text, name: '' });
-    }
-    return _clientQuery(text, values);
-  } as any;
-  return client;
-} as any;
-
 export default pool;
