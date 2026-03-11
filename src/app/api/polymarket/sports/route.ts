@@ -347,11 +347,16 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
       })),
     }));
     const slimData = { events: slimEvents, hasMore, total, ...(taxonomy ? { taxonomy } : {}) };
-    await pool.query(
-      `INSERT INTO api_cache (key, data, updated_at) VALUES ('sports_processed', $1::jsonb, NOW())
-       ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
-      [JSON.stringify(slimData)]
-    ).catch(() => {});
+    try {
+      await pool.query(
+        `INSERT INTO api_cache (key, data, updated_at) VALUES ('sports_processed', $1::jsonb, NOW())
+         ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
+        [JSON.stringify(slimData)]
+      );
+      console.log(`[sports] Cache write OK, slimData size: ${JSON.stringify(slimData).length}`);
+    } catch (cacheErr) {
+      console.error('[sports] Cache write FAILED:', cacheErr);
+    }
   }
 
   return NextResponse.json(
