@@ -4,24 +4,32 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'edge';
 export const preferredRegion = 'sin1';
 
+/** Short-lived redirect so CDNs don't cache the fallback */
+function redirectToFull(req: NextRequest) {
+  const fallback = new URL('/api/polymarket/sports', req.url);
+  fallback.search = req.nextUrl.search;
+  return new NextResponse(null, {
+    status: 307,
+    headers: {
+      'Location': fallback.toString(),
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
 /**
  * GET /api/polymarket/sports-fast
  *
  * Ultra-fast edge endpoint that reads precomputed sports data
  * from Supabase REST API. Falls back to 307 redirect to the
  * full serverless endpoint if cache miss.
- *
- * ~50-100ms total (0ms cold start + ~50ms Supabase REST call)
  */
 export async function GET(req: NextRequest) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
-    // No Supabase config — redirect to full endpoint
-    const fallback = new URL('/api/polymarket/sports', req.url);
-    fallback.search = req.nextUrl.search;
-    return NextResponse.redirect(fallback, 307);
+    return redirectToFull(req);
   }
 
   // Check for filters — edge only serves unfiltered default page
@@ -32,10 +40,7 @@ export async function GET(req: NextRequest) {
   const offset = params.get('offset') || '0';
 
   if (tab !== 'live' || sport || league || offset !== '0') {
-    // Filtered/paginated requests go to full serverless endpoint
-    const fallback = new URL('/api/polymarket/sports', req.url);
-    fallback.search = req.nextUrl.search;
-    return NextResponse.redirect(fallback, 307);
+    return redirectToFull(req);
   }
 
   try {
@@ -67,9 +72,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch {
-    // Cache miss — redirect to full serverless endpoint
-    const fallback = new URL('/api/polymarket/sports', req.url);
-    fallback.search = req.nextUrl.search;
-    return NextResponse.redirect(fallback, 307);
+    return redirectToFull(req);
   }
 }
