@@ -56,10 +56,10 @@ export async function GET(req: NextRequest) {
       }
     );
 
-    if (!res.ok) throw new Error(`Supabase ${res.status}`);
+    if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
 
     const rows = await res.json();
-    if (rows.length === 0) throw new Error('No cache');
+    if (rows.length === 0) throw new Error('No cache row found');
 
     // Check freshness (15 min)
     const updatedAt = new Date(rows[0].updated_at);
@@ -71,7 +71,15 @@ export async function GET(req: NextRequest) {
         'CDN-Cache-Control': 'max-age=30',
       },
     });
-  } catch {
+  } catch (err) {
+    // Debug: return error as JSON (remove after debugging)
+    if (req.nextUrl.searchParams.get('debug') === '1') {
+      return NextResponse.json({
+        error: (err as Error).message,
+        hasUrl: !!supabaseUrl,
+        urlPrefix: supabaseUrl?.slice(0, 30),
+      }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
+    }
     return redirectToFull(req);
   }
 }
