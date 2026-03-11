@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
 export const maxDuration = 300; // 5 min for Pro plan
+export const preferredRegion = 'sin1';
 
 // GET = quick DB test (read + write)
 export async function GET() {

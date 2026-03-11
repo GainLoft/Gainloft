@@ -3,13 +3,14 @@ import pool from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
+export const preferredRegion = 'sin1';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 
 // Top tags to sync — keep it lean for quick mode
 const SPORT_TAGS: { tag: string; quickPages: number }[] = [
-  { tag: 'sports', quickPages: 3 },
-  { tag: 'esports', quickPages: 3 },
+  { tag: 'sports', quickPages: 1 },
+  { tag: 'esports', quickPages: 1 },
 ];
 
 export async function GET(req: NextRequest) {

@@ -5,6 +5,7 @@ import { buildMatchInfo, mapToMarket, PMEvent, PMMarket } from '@/lib/polymarket
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
+export const preferredRegion = 'sin1';
 
 // Sync is handled by Vercel Cron (vercel.json) calling /api/polymarket/sync/cron
 

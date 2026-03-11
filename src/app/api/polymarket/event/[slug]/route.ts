@@ -3,6 +3,8 @@ import pool from '@/lib/db';
 import { Market, EventGroup, Token, MatchInfo } from '@/lib/types';
 import { buildMatchInfo, PMEvent } from '@/lib/polymarket';
 
+export const preferredRegion = 'sin1';
+
 export async function GET(
   _req: Request,
   { params }: { params: { slug: string } }

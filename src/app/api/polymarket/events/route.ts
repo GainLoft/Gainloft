@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import { Market, Token } from '@/lib/types';
 
+export const preferredRegion = 'sin1';
+
 const SPORTS_TAGS = ['sports', 'games', 'esports'];
 
 export async function GET(req: Request) {
