@@ -7,6 +7,9 @@ const pool = new Pool({
   connectionString: dbUrl,
   ssl: isSupabase ? { rejectUnauthorized: false } : false,
   max: isSupabase ? 3 : 10,
+  connectionTimeoutMillis: 10000,
+  query_timeout: 30000,
+  idle_in_transaction_session_timeout: 30000,
 });
 
 // For Supabase transaction pooler: wrap query to avoid named prepared statements
