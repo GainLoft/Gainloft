@@ -532,10 +532,23 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   /* ── Reset & fetch first page when filters change ── */
   const initialLoadRef = useRef(true);
   useEffect(() => {
-    // Skip initial fetch only if we have SSR data for the default tab
     if (initialLoadRef.current) {
       initialLoadRef.current = false;
       if (viewTab === 'live' && !activeFilter && initialEvents.length > 0) return;
+      // Use pre-started fetch from <Script> if available (eliminates waterfall)
+      if (viewTab === 'live' && !activeFilter && (window as any).__SPORTS_PROMISE) {
+        setIsLoading(true);
+        (window as any).__SPORTS_PROMISE
+          .then((data: PageResponse) => {
+            setEvents(data.events || []);
+            if (data.taxonomy) setTaxonomy(data.taxonomy);
+            setHasMore(data.hasMore ?? false);
+            setTotal(data.total ?? 0);
+          })
+          .catch(() => { fetchPage(0, false); })
+          .finally(() => { setIsLoading(false); (window as any).__SPORTS_PROMISE = null; });
+        return;
+      }
     }
     setEvents([]);
     setHasMore(false);
