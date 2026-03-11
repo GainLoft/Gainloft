@@ -490,7 +490,10 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
       params.set('league', activeFilter.slug);
       if (activeFilter.sport) params.set('sport', activeFilter.sport);
     }
-    return `/api/polymarket/sports?${params.toString()}`;
+    // Use fast edge endpoint for unfiltered first page, full endpoint otherwise
+    const isDefault = viewTab === 'live' && !activeFilter && offset === 0;
+    const base = isDefault ? '/api/polymarket/sports-fast' : '/api/polymarket/sports';
+    return `${base}?${params.toString()}`;
   }, [viewTab, activeFilter]);
 
   /* ── Fetch a page ── */
