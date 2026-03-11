@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import { EventGroup, Token, MatchInfo, Market } from '@/lib/types';
 import { buildMatchInfo, mapToMarket, PMEvent, PMMarket } from '@/lib/polymarket';
-import { startSyncScheduler } from '@/lib/sportsSyncScheduler';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-// Start auto-sync scheduler on first request (keeps DB fresh for futures tab)
-startSyncScheduler();
+// Sync is handled by Vercel Cron (vercel.json) calling /api/polymarket/sync/cron
 
 /**
  * GET /api/polymarket/sports?tab=live|futures&offset=0&limit=30&sport=&league=

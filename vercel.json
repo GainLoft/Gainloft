@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/polymarket/sync/cron?mode=quick",
+      "schedule": "*/10 * * * *"
+    }
+  ]
+}

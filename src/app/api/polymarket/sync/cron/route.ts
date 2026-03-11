@@ -1,143 +1,243 @@
 import { NextRequest, NextResponse } from 'next/server';
+import pool from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300; // 5 min max for long syncs
+export const maxDuration = 300;
 
-/**
- * GET /api/polymarket/sync/cron
- *
- * Automated sync of all sports categories from Polymarket.
- * Designed to be called every 10 minutes by a cron job or setInterval.
- *
- * Query params:
- *   secret  — must match CRON_SECRET env var (optional security)
- *   mode    — "full" (all sports, more pages) or "quick" (top sports, fewer pages). Default: "quick"
- *
- * Quick mode (~2 min): syncs top 5 pages of each major sport + 2 pages of smaller ones
- * Full mode (~10 min): syncs 20+ pages of each sport for deep coverage
- */
+const GAMMA_API = 'https://gamma-api.polymarket.com';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-
-// All sport tags to sync, with page limits for quick vs full mode
-const SPORT_TAGS: { tag: string; quickPages: number; fullPages: number }[] = [
-  // Major sports (high volume)
-  { tag: 'soccer', quickPages: 5, fullPages: 80 },
-  { tag: 'basketball', quickPages: 5, fullPages: 80 },
-  { tag: 'esports', quickPages: 5, fullPages: 80 },
-  { tag: 'hockey', quickPages: 5, fullPages: 30 },
-  { tag: 'tennis', quickPages: 5, fullPages: 50 },
-  { tag: 'cricket', quickPages: 5, fullPages: 50 },
-
-  // Medium sports
-  { tag: 'rugby', quickPages: 2, fullPages: 15 },
-  { tag: 'ufc', quickPages: 2, fullPages: 30 },
-  { tag: 'baseball', quickPages: 2, fullPages: 30 },
-  { tag: 'football', quickPages: 2, fullPages: 30 },
-  { tag: 'table-tennis', quickPages: 2, fullPages: 15 },
-  { tag: 'golf', quickPages: 2, fullPages: 30 },
-  { tag: 'f1', quickPages: 2, fullPages: 30 },
-  { tag: 'boxing', quickPages: 2, fullPages: 15 },
-  { tag: 'chess', quickPages: 2, fullPages: 30 },
-  { tag: 'pickleball', quickPages: 2, fullPages: 10 },
-  { tag: 'lacrosse', quickPages: 2, fullPages: 10 },
-
-  // Key sub-leagues (ensure coverage)
-  { tag: 'nba', quickPages: 3, fullPages: 10 },
-  { tag: 'nhl', quickPages: 3, fullPages: 10 },
-  { tag: 'epl', quickPages: 3, fullPages: 10 },
-  { tag: 'ucl', quickPages: 3, fullPages: 10 },
-  { tag: 'nfl', quickPages: 2, fullPages: 10 },
-  { tag: 'mlb', quickPages: 2, fullPages: 10 },
-  { tag: 'counter-strike-2', quickPages: 3, fullPages: 10 },
-  { tag: 'valorant', quickPages: 3, fullPages: 10 },
-  { tag: 'league-of-legends', quickPages: 3, fullPages: 10 },
-  { tag: 'dota-2', quickPages: 3, fullPages: 10 },
-  { tag: 'ipl', quickPages: 2, fullPages: 20 },
-  { tag: 'cfb', quickPages: 2, fullPages: 10 },
-  { tag: 'ncaa-basketball', quickPages: 2, fullPages: 10 },
-
-  // Soccer leagues
-  { tag: 'la-liga', quickPages: 2, fullPages: 10 },
-  { tag: 'serie-a', quickPages: 2, fullPages: 5 },
-  { tag: 'bundesliga', quickPages: 2, fullPages: 5 },
-  { tag: 'ligue-1', quickPages: 2, fullPages: 5 },
-  { tag: 'mls', quickPages: 2, fullPages: 5 },
-
-  // Esports extras
-  { tag: 'honor-of-kings', quickPages: 2, fullPages: 10 },
-  { tag: 'call-of-duty', quickPages: 2, fullPages: 10 },
-  { tag: 'rainbow-six-siege', quickPages: 2, fullPages: 10 },
-  { tag: 'rocket-league', quickPages: 2, fullPages: 10 },
-  { tag: 'overwatch', quickPages: 2, fullPages: 5 },
-
-  // Hockey/Basketball leagues
-  { tag: 'euroleague-basketball', quickPages: 2, fullPages: 10 },
-  { tag: 'cba', quickPages: 2, fullPages: 10 },
-  { tag: 'kbo', quickPages: 2, fullPages: 10 },
-
-  // Rugby leagues
-  { tag: 'super-rugby-pacific', quickPages: 2, fullPages: 10 },
-  { tag: 'rugby-champions-cup', quickPages: 2, fullPages: 10 },
-
-  // Cricket leagues
-  { tag: 'international-cricket', quickPages: 2, fullPages: 10 },
+// Top tags to sync — keep it lean for quick mode
+const SPORT_TAGS: { tag: string; quickPages: number }[] = [
+  { tag: 'sports', quickPages: 3 },
+  { tag: 'esports', quickPages: 3 },
 ];
 
 export async function GET(req: NextRequest) {
-  // Optional secret check
   const secret = req.nextUrl.searchParams.get('secret');
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && secret !== cronSecret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const mode = req.nextUrl.searchParams.get('mode') === 'full' ? 'full' : 'quick';
   const startTime = Date.now();
-  const results: { tag: string; synced: number; skipped: number; pages: number }[] = [];
   let totalSynced = 0;
   let totalSkipped = 0;
+  let totalPages = 0;
 
-  for (const { tag, quickPages, fullPages } of SPORT_TAGS) {
-    const maxPages = mode === 'full' ? fullPages : quickPages;
-    try {
-      const res = await fetch(`${BASE_URL}/api/polymarket/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag, maxPages }),
-      });
-      const data = await res.json();
-      results.push({ tag, synced: data.synced || 0, skipped: data.skipped || 0, pages: data.pages || 0 });
-      totalSynced += data.synced || 0;
-      totalSkipped += data.skipped || 0;
-    } catch (err) {
-      results.push({ tag, synced: 0, skipped: 0, pages: 0 });
-      console.error(`Cron sync error for ${tag}:`, err);
+  for (const { tag, quickPages } of SPORT_TAGS) {
+    const pageSize = 100;
+    for (let page = 0; page < quickPages; page++) {
+      try {
+        const sp = new URLSearchParams({
+          tag_slug: tag,
+          limit: String(pageSize),
+          offset: String(page * pageSize),
+          order: 'volume24hr',
+          ascending: 'false',
+          active: 'true',
+        });
+        const res = await fetch(`${GAMMA_API}/events?${sp}`, {
+          cache: 'no-store',
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+        });
+        if (!res.ok) break;
+        const events: any[] = await res.json();
+        if (events.length === 0) break;
+
+        // Process events in parallel batches of 5
+        for (let i = 0; i < events.length; i += 5) {
+          const batch = events.slice(i, i + 5);
+          const results = await Promise.allSettled(batch.map(e => upsertEvent(e)));
+          for (const r of results) {
+            if (r.status === 'fulfilled') totalSynced++;
+            else totalSkipped++;
+          }
+        }
+
+        totalPages++;
+        if (events.length < pageSize) break;
+      } catch {
+        break;
+      }
     }
   }
 
-  // Resolution sync: mark closed/resolved markets in DB
+  // Resolution sync
   let totalResolved = 0;
   try {
-    const resRes = await fetch(`${BASE_URL}/api/polymarket/sync`, { method: 'PUT' });
-    const resData = await resRes.json();
-    totalResolved = resData.resolved || 0;
-    console.log(`[Cron Sync] Resolution pass: resolved=${totalResolved} checked=${resData.checked || 0}`);
-  } catch (err) {
-    console.error('[Cron Sync] Resolution pass error:', err);
-  }
+    const { rows: activeMarkets } = await pool.query(`
+      SELECT id, polymarket_id FROM markets
+      WHERE polymarket_id IS NOT NULL AND closed = false
+      ORDER BY created_at DESC LIMIT 200
+    `);
+    for (const market of activeMarkets) {
+      try {
+        const res = await fetch(
+          `${GAMMA_API}/markets/${market.polymarket_id}`,
+          { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } }
+        );
+        if (!res.ok) continue;
+        const pm = await res.json();
+        if (pm.closed || !pm.active) {
+          await pool.query(`
+            UPDATE markets SET closed = true, resolved = true, active = false, accepting_orders = false
+            WHERE id = $1
+          `, [market.id]);
+          totalResolved++;
+        }
+      } catch { /* skip */ }
+    }
+  } catch { /* skip */ }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
-  console.log(`[Cron Sync] mode=${mode} synced=${totalSynced} skipped=${totalSkipped} resolved=${totalResolved} duration=${duration}s`);
-
   return NextResponse.json({
-    mode,
     totalSynced,
     totalSkipped,
     totalResolved,
-    tags: results.length,
+    totalPages,
     duration: `${duration}s`,
-    results,
   });
+}
+
+// ── Upsert logic (same as sync/route.ts but inline to avoid HTTP calls) ──
+
+async function upsertEvent(e: any) {
+  const markets = e.markets || [];
+  if (markets.length === 0) return;
+
+  const isMulti = markets.length > 1 || e.negRisk;
+  const tags = JSON.stringify((e.tags || []).map((t: any) => ({ slug: t.slug, label: t.label })));
+
+  let eventGroupId: string | null = null;
+
+  if (isMulti) {
+    const { rows } = await pool.query(`
+      INSERT INTO event_groups (polymarket_id, title, slug, description, category, tags, image_url, end_date_iso, volume, volume_24hr, liquidity, neg_risk)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
+        title = EXCLUDED.title, slug = EXCLUDED.slug, description = EXCLUDED.description,
+        tags = EXCLUDED.tags, image_url = EXCLUDED.image_url,
+        volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
+        liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso
+      RETURNING id
+    `, [
+      e.id, e.title, e.slug,
+      e.description || null, e.category || 'General', tags,
+      e.image || null, e.endDate || null,
+      e.volume || 0, e.volume24hr || 0, e.liquidity || 0,
+      e.negRisk || false,
+    ]);
+    eventGroupId = rows[0].id;
+  }
+
+  for (const m of markets) {
+    await upsertMarket(m, e, tags, eventGroupId);
+  }
+}
+
+async function upsertMarket(m: any, e: any, tags: string, eventGroupId: string | null) {
+  const baseSlug = m.slug || e.slug;
+  let rows: any[];
+  try {
+    ({ rows } = await pool.query(`
+      INSERT INTO markets (
+        polymarket_id, condition_id, question, group_item_title, description,
+        category, tags, slug, image_url, resolution_source,
+        minimum_tick_size, minimum_order_size,
+        active, closed, resolved, accepting_orders,
+        end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+      ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
+        question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
+        active = EXCLUDED.active, closed = EXCLUDED.closed,
+        resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
+        volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
+        liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
+        tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id
+      RETURNING id
+    `, [
+      m.id, m.conditionId || '', m.question,
+      m.groupItemTitle || null, m.description || null,
+      m.category || e.category || 'General', tags,
+      baseSlug, m.image || e.image || null,
+      m.resolutionSource || null,
+      m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
+      m.active !== false, m.closed || false,
+      !!m.closedTime, m.active !== false && !m.closed,
+      m.endDate || e.endDate || null,
+      parseFloat(m.volume) || 0, m.volume24hr || 0,
+      parseFloat(m.liquidity) || 0, e.negRisk || false,
+      eventGroupId,
+    ]));
+  } catch (slugErr: any) {
+    if (slugErr.code === '23505' && slugErr.constraint?.includes('slug')) {
+      ({ rows } = await pool.query(`
+        INSERT INTO markets (
+          polymarket_id, condition_id, question, group_item_title, description,
+          category, tags, slug, image_url, resolution_source,
+          minimum_tick_size, minimum_order_size,
+          active, closed, resolved, accepting_orders,
+          end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+        ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
+          question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
+          active = EXCLUDED.active, closed = EXCLUDED.closed,
+          resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
+          volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
+          liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
+          tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id
+        RETURNING id
+      `, [
+        m.id, m.conditionId || '', m.question,
+        m.groupItemTitle || null, m.description || null,
+        m.category || e.category || 'General', tags,
+        `${baseSlug}-${m.id.slice(0, 8)}`, m.image || e.image || null,
+        m.resolutionSource || null,
+        m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
+        m.active !== false, m.closed || false,
+        !!m.closedTime, m.active !== false && !m.closed,
+        m.endDate || e.endDate || null,
+        parseFloat(m.volume) || 0, m.volume24hr || 0,
+        parseFloat(m.liquidity) || 0, e.negRisk || false,
+        eventGroupId,
+      ]));
+    } else {
+      throw slugErr;
+    }
+  }
+
+  const marketDbId = rows[0].id;
+
+  // Upsert tokens
+  const outcomes = parseField(m.outcomes, ['Yes', 'No']);
+  const prices = parseField(m.outcomePrices, []).map(Number);
+  const tokenIds = parseField(m.clobTokenIds, []);
+
+  for (let i = 0; i < outcomes.length; i++) {
+    const tokenId = tokenIds[i] || `${m.id}-${i}`;
+    try {
+      await pool.query(`
+        INSERT INTO tokens (market_id, token_id, outcome, price, label)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (market_id, outcome) DO UPDATE SET
+          token_id = EXCLUDED.token_id, price = EXCLUDED.price, label = EXCLUDED.label
+      `, [marketDbId, tokenId, outcomes[i], prices[i] || 0.5, m.groupItemTitle || null]);
+    } catch (tokenErr: any) {
+      if (tokenErr.code === '23505') {
+        await pool.query(`
+          UPDATE tokens SET price = $1, label = $2
+          WHERE market_id = $3 AND outcome = $4
+        `, [prices[i] || 0.5, m.groupItemTitle || null, marketDbId, outcomes[i]]);
+      }
+    }
+  }
+}
+
+function parseField(val: unknown, fallback: any[]): any[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try { return JSON.parse(val); } catch { return fallback; }
+  }
+  return fallback;
 }
