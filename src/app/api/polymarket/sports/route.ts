@@ -172,36 +172,38 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
   const egTagWhere = egTagConditions.join(' AND ');
   const mTagWhere = mTagConditions.join(' AND ');
 
-  // 1. Query event_groups with "vs" in title (matches)
-  const { rows: egRows } = await pool.query(
-    `SELECT eg.id, eg.title, eg.slug, eg.description, eg.category, eg.tags,
-       eg.image_url, eg.end_date_iso, eg.volume, eg.volume_24hr, eg.liquidity,
-       eg.neg_risk, eg.created_at, eg.polymarket_id
-     FROM event_groups eg
-     WHERE eg.polymarket_id IS NOT NULL
-       AND ${egTagWhere}
-       AND eg.title ~* 'vs\\.?'
-       AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
-     ORDER BY eg.volume DESC
-     LIMIT 300`,
-    tagParams
-  );
+  // 1+2. Query event_groups and standalone markets in parallel
+  const taxonomyPromise = offset === 0 ? buildTaxonomyFromDB() : Promise.resolve(undefined);
 
-  // 2. Query standalone markets (no event_group) with "vs" in title
-  const { rows: standaloneRows } = await pool.query(
-    `SELECT m.id, m.question, m.slug, m.category, m.tags,
-       m.image_url, m.end_date_iso, m.volume, m.volume_24hr, m.liquidity,
-       m.neg_risk, m.created_at, m.active, m.closed, m.polymarket_id,
-       m.condition_id, m.minimum_tick_size, m.minimum_order_size
-     FROM markets m
-     WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
-       AND ${mTagWhere}
-       AND m.question ~* 'vs\\.?'
-       AND m.closed = false
-     ORDER BY m.volume DESC
-     LIMIT 100`,
-    tagParams
-  );
+  const [{ rows: egRows }, { rows: standaloneRows }] = await Promise.all([
+    pool.query(
+      `SELECT eg.id, eg.title, eg.slug, eg.description, eg.category, eg.tags,
+         eg.image_url, eg.end_date_iso, eg.volume, eg.volume_24hr, eg.liquidity,
+         eg.neg_risk, eg.created_at, eg.polymarket_id
+       FROM event_groups eg
+       WHERE eg.polymarket_id IS NOT NULL
+         AND ${egTagWhere}
+         AND eg.title ~* 'vs\\.?'
+         AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
+       ORDER BY eg.volume DESC
+       LIMIT 300`,
+      tagParams
+    ),
+    pool.query(
+      `SELECT m.id, m.question, m.slug, m.category, m.tags,
+         m.image_url, m.end_date_iso, m.volume, m.volume_24hr, m.liquidity,
+         m.neg_risk, m.created_at, m.active, m.closed, m.polymarket_id,
+         m.condition_id, m.minimum_tick_size, m.minimum_order_size
+       FROM markets m
+       WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
+         AND ${mTagWhere}
+         AND m.question ~* 'vs\\.?'
+         AND m.closed = false
+       ORDER BY m.volume DESC
+       LIMIT 100`,
+      tagParams
+    ),
+  ]);
 
   // 3. Load sub-markets for event_groups
   const groupIds = egRows.map((r: any) => r.id);
@@ -305,15 +307,12 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
   const trimmed = events.slice(offset, offset + limit);
   const hasMore = offset + trimmed.length < total;
 
-  // Build taxonomy only on first page
-  let taxonomy: TaxonomyItem[] | undefined;
-  if (offset === 0) {
-    taxonomy = await buildTaxonomyFromDB();
-  }
+  // Taxonomy was started in parallel at the top — await it now
+  const taxonomy = await taxonomyPromise;
 
   return NextResponse.json(
     { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}) },
-    { headers: { 'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=10' } }
+    { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' } }
   );
 }
 
@@ -484,78 +483,70 @@ interface TaxonomyItem {
 }
 
 async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
-  // Build root condition matching any parent sport or sports/esports meta tag
   const rootCond = [
     'sports', 'esports', ...Object.keys(PARENT_SPORTS),
   ].map(s => `tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
 
-  // Get all tag pairs from active sports events
+  // Single query: get all tag pairs (sport + co-occurring tag) with counts
   const { rows } = await pool.query(`
-    SELECT t_elem->>'slug' as slug, t_elem->>'label' as label, COUNT(*) as cnt
+    SELECT sport_slug, t2->>'slug' as tag_slug, t2->>'label' as tag_label, COUNT(*) as cnt
     FROM (
-      SELECT eg.id, jsonb_array_elements(eg.tags) as t_elem
-      FROM event_groups eg
-      WHERE eg.polymarket_id IS NOT NULL
-        AND (${rootCond})
-        AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
-      UNION ALL
-      SELECT m.id, jsonb_array_elements(m.tags) as t_elem
-      FROM markets m
-      WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
-        AND (${rootCond})
-        AND m.closed = false
-    ) sub
-    GROUP BY slug, label
-    ORDER BY cnt DESC
-  `);
-
-  // Find parent sports and their counts
-  const sportCounts: Record<string, { label: string; count: number }> = {};
-  const allTags: Record<string, { label: string; count: number }> = {};
-  for (const r of rows) {
-    const slug = r.slug.toLowerCase();
-    allTags[slug] = { label: r.label, count: parseInt(r.cnt) };
-    if (PARENT_SPORTS[slug]) {
-      sportCounts[slug] = { label: PARENT_SPORTS[slug], count: parseInt(r.cnt) };
-    }
-  }
-
-  // For each parent sport, find league tags via co-occurrence
-  const result: TaxonomyItem[] = [];
-
-  for (const [sport, { label, count }] of Object.entries(sportCounts)) {
-    // Get tags that co-occur with this sport
-    const { rows: coRows } = await pool.query(`
-      SELECT t2->>'slug' as slug, t2->>'label' as label, COUNT(*) as cnt
+      SELECT
+        jsonb_array_elements(sub.tags)->>'slug' as sport_slug,
+        jsonb_array_elements(sub.tags) as t2,
+        sub.id
       FROM (
-        SELECT eg.id, jsonb_array_elements(eg.tags) as t2
+        SELECT eg.id, eg.tags
         FROM event_groups eg
         WHERE eg.polymarket_id IS NOT NULL
-          AND eg.tags @> $1::jsonb
+          AND (${rootCond})
           AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
         UNION ALL
-        SELECT m.id, jsonb_array_elements(m.tags) as t2
+        SELECT m.id, m.tags
         FROM markets m
         WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
-          AND m.tags @> $1::jsonb
+          AND (${rootCond})
           AND m.closed = false
       ) sub
-      GROUP BY slug, label
-      HAVING COUNT(*) >= 2
-      ORDER BY cnt DESC
-    `, [JSON.stringify([{ slug: sport }])]);
+    ) expanded
+    WHERE sport_slug IN (${Object.keys(PARENT_SPORTS).map((_, i) => `$${i + 1}`).join(',')})
+    GROUP BY sport_slug, tag_slug, tag_label
+    ORDER BY cnt DESC
+  `, Object.keys(PARENT_SPORTS));
 
-    const leagues: { slug: string; label: string; count: number }[] = [];
-    for (const r of coRows) {
-      const s = r.slug.toLowerCase();
-      if (s === sport || META_TAGS.has(s) || PARENT_SPORTS[s]) continue;
-      leagues.push({ slug: s, label: r.label, count: parseInt(r.cnt) });
+  // Build taxonomy from flat rows
+  const sportMap: Record<string, { label: string; count: number; leagues: { slug: string; label: string; count: number }[] }> = {};
+
+  for (const r of rows) {
+    const sport = r.sport_slug.toLowerCase();
+    const tagSlug = r.tag_slug.toLowerCase();
+    const cnt = parseInt(r.cnt);
+
+    if (!PARENT_SPORTS[sport]) continue;
+
+    if (!sportMap[sport]) {
+      sportMap[sport] = { label: PARENT_SPORTS[sport], count: 0, leagues: [] };
     }
 
-    result.push({ slug: sport, label, count, leagues });
+    // Self-reference = sport count
+    if (tagSlug === sport) {
+      sportMap[sport].count = cnt;
+      continue;
+    }
+
+    // Skip meta tags and other parent sports
+    if (META_TAGS.has(tagSlug) || PARENT_SPORTS[tagSlug]) continue;
+
+    if (cnt >= 2) {
+      sportMap[sport].leagues.push({ slug: tagSlug, label: r.tag_label, count: cnt });
+    }
   }
 
-  result.sort((a, b) => b.count - a.count);
+  const result: TaxonomyItem[] = Object.entries(sportMap)
+    .filter(([, v]) => v.count > 0)
+    .map(([slug, v]) => ({ slug, ...v }))
+    .sort((a, b) => b.count - a.count);
+
   return result;
 }
 

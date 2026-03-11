@@ -6,7 +6,7 @@ const isSupabase = dbUrl.includes('supabase');
 const pool = new Pool({
   connectionString: dbUrl,
   ssl: isSupabase ? { rejectUnauthorized: false } : false,
-  max: isSupabase ? 1 : 10,
+  max: isSupabase ? 3 : 10,
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
 });
