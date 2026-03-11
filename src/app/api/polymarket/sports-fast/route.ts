@@ -72,12 +72,22 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    // Debug: return error as JSON (remove after debugging)
+    // Debug: return error details (remove after debugging)
     if (req.nextUrl.searchParams.get('debug') === '1') {
+      // Also try raw fetch to see what Supabase returns
+      let rawInfo = '';
+      try {
+        const raw = await fetch(
+          `${supabaseUrl}/rest/v1/api_cache?key=eq.sports_processed&select=key,updated_at`,
+          { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Accept': 'application/json' } }
+        );
+        rawInfo = await raw.text();
+      } catch (e2) { rawInfo = (e2 as Error).message; }
       return NextResponse.json({
         error: (err as Error).message,
         hasUrl: !!supabaseUrl,
-        urlPrefix: supabaseUrl?.slice(0, 30),
+        rawRows: rawInfo,
+        now: new Date().toISOString(),
       }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
     }
     return redirectToFull(req);
