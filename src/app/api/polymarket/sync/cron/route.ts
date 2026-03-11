@@ -173,13 +173,21 @@ export async function GET(req: NextRequest) {
       console.error('Sports cache precompute error:', cacheErr);
     }
 
-    // Warm the public API cache (Cloudflare + Vercel edge)
-    try {
-      const warmUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}/api/polymarket/sports?tab=live&offset=0&limit=30`
-        : null;
-      if (warmUrl) await fetch(warmUrl, { cache: 'no-store' });
-    } catch {}
+    // Warm all API caches (Cloudflare + Vercel edge)
+    const baseUrl = process.env.SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+    if (baseUrl) {
+      const warmUrls = [
+        `${baseUrl}/api/polymarket/sports?tab=live&offset=0&limit=30`,
+        `${baseUrl}/api/polymarket/events?limit=50&order=volume24hr`,
+        `${baseUrl}/api/polymarket/events?limit=100&order=newest`,
+        `${baseUrl}/api/polymarket/breaking`,
+        `${baseUrl}/api/polymarket/taxonomy`,
+        `${baseUrl}/api/polymarket/events/live?tag=politics&limit=100`,
+        `${baseUrl}/api/polymarket/events/live?tag=crypto&limit=100`,
+        `${baseUrl}/api/polymarket/events/live?tag=sports&limit=100`,
+      ];
+      await Promise.allSettled(warmUrls.map(url => fetch(url, { cache: 'no-store' }).catch(() => {})));
+    }
   } catch (err) {
     return NextResponse.json({
       error: (err as Error).message,
