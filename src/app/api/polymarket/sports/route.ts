@@ -328,7 +328,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
 
   // Cache slimmed response for edge endpoint (unfiltered first page only)
   if (!sportFilter && !leagueFilter && offset === 0) {
-    writeSlimCache(trimmed, hasMore, total, taxonomy).catch(() => {});
+    await writeSlimCache(trimmed, hasMore, total, taxonomy).catch(e => console.error('[sports] slim cache write failed:', e));
   }
 
   return NextResponse.json(
@@ -722,7 +722,7 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
     const total = events.length;
 
     // Write slimmed data to sports_processed for edge endpoint
-    writeSlimCache(trimmed, hasMore, total, taxonomy).catch(() => {});
+    await writeSlimCache(trimmed, hasMore, total, taxonomy).catch(e => console.error('[sports] slim cache write failed:', e));
 
     return NextResponse.json(
       { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}) },
