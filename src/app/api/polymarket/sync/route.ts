@@ -102,17 +102,19 @@ export async function POST(req: Request) {
   }
 }
 
-async function upsertEvent(e: any) {
-  const markets = e.markets || [];
-  if (markets.length === 0) return;
+const MAX_MARKETS_PER_EVENT = 30;
 
-  const isMulti = markets.length > 1 || e.negRisk;
+async function upsertEvent(e: any) {
+  const allMarkets = e.markets || [];
+  if (allMarkets.length === 0) return;
+
+  const markets = allMarkets.slice(0, MAX_MARKETS_PER_EVENT);
+  const isMulti = allMarkets.length > 1 || e.negRisk;
   const tags = JSON.stringify((e.tags || []).map((t: any) => ({ slug: t.slug, label: t.label })));
 
   let eventGroupId: string | null = null;
 
   if (isMulti) {
-    // Upsert event group via polymarket_id
     const { rows } = await pool.query(`
       INSERT INTO event_groups (polymarket_id, title, slug, description, category, tags, image_url, end_date_iso, volume, volume_24hr, liquidity, neg_risk)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)

@@ -9,8 +9,8 @@ const GAMMA_API = 'https://gamma-api.polymarket.com';
 
 // Top tags to sync — keep it lean for quick mode
 const SPORT_TAGS: { tag: string; quickPages: number }[] = [
-  { tag: 'sports', quickPages: 1 },
-  { tag: 'esports', quickPages: 1 },
+  { tag: 'sports', quickPages: 2 },
+  { tag: 'esports', quickPages: 2 },
 ];
 
 export async function GET(req: NextRequest) {
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   try {
     for (const { tag, quickPages } of SPORT_TAGS) {
-      const pageSize = 20;
+      const pageSize = 50;
       for (let page = 0; page < quickPages; page++) {
         try {
           const sp = new URLSearchParams({
@@ -114,11 +114,16 @@ export async function GET(req: NextRequest) {
 
 // ── Upsert logic ──
 
-async function upsertEvent(e: any) {
-  const markets = e.markets || [];
-  if (markets.length === 0) return;
+const MAX_MARKETS_PER_EVENT = 30;
 
-  const isMulti = markets.length > 1 || e.negRisk;
+async function upsertEvent(e: any) {
+  const allMarkets = e.markets || [];
+  if (allMarkets.length === 0) return;
+
+  // Limit markets per event to avoid timeout on mega-events (e.g. FIFA World Cup with 500+ markets)
+  const markets = allMarkets.slice(0, MAX_MARKETS_PER_EVENT);
+
+  const isMulti = allMarkets.length > 1 || e.negRisk;
   const tags = JSON.stringify((e.tags || []).map((t: any) => ({ slug: t.slug, label: t.label })));
 
   let eventGroupId: string | null = null;
