@@ -24,7 +24,7 @@ export default function RootLayout({
       <head>
         <link rel="dns-prefetch" href="https://clob.polymarket.com" />
         <link rel="preconnect" href="https://polymarket-upload.s3.us-east-2.amazonaws.com" crossOrigin="anonymous" />
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}})()` }} />
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var d=document.documentElement,t=localStorage.getItem('theme');if(t){d.setAttribute('data-theme',t);d.style.background=t==='dark'?'#131722':'#ffffff'}else if(window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches){d.style.background='#131722'}}catch(e){}})()` }} />
       </head>
       <body className={`${inter.variable} ${outfit.variable} font-sans antialiased`} style={{ background: 'var(--bg)', color: 'var(--text-primary)' }}>
         <Providers>
