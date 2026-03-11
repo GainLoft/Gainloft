@@ -2,12 +2,27 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import useSWR from 'swr';
+
+const swrFetcher = (url: string) => fetch(url).then(r => r.json());
 
 interface CategoryItem {
   slug: string;
   label: string;
   pmTag: string;
   pmPath: string;
+}
+
+interface SubItem {
+  slug: string;
+  label: string;
+  count?: number;
+}
+
+interface TaxonomyResponse {
+  category: string;
+  items: SubItem[];
+  allCount?: number;
 }
 
 // Static nav items (not categories)
@@ -112,10 +127,120 @@ export default function LeftSidebar({ initialCategories = [] }: { initialCategor
   // Use server-provided categories directly (refreshed via ISR revalidation)
   const categories = initialCategories;
 
+  // Determine current path context
+  const pathParts = pathname.split('/').filter(Boolean);
+  const basePath = `/${pathParts[0] || ''}`;
+  const activeSub = pathParts[1] || null;
+
+  // Find current category match from server-provided data
+  const categoryMatch = categories.find(c => `/${c.slug}` === basePath);
+  const taxonomyKey = isSports ? undefined : categoryMatch?.pmTag;
+  const pmPath = categoryMatch?.pmPath;
+  const categoryLabel = categoryMatch?.label;
+
+  // Fetch sidebar subcategory items when on a category page
+  const { data: taxonomyData } = useSWR<TaxonomyResponse>(
+    taxonomyKey
+      ? `/api/polymarket/taxonomy?category=${encodeURIComponent(categoryMatch!.slug)}${pmPath ? `&pmPath=${encodeURIComponent(pmPath)}` : ''}`
+      : null,
+    swrFetcher,
+    { refreshInterval: 120000, revalidateOnFocus: true, dedupingInterval: 60000 }
+  );
+
   // Pages with their own sidebar — don't render global sidebar
   if (isSports) return null;
 
-  // Main navigation sidebar
+  const subcategories: SubItem[] = taxonomyData?.items || [];
+
+  // Show subcategory sidebar when on a category page with data
+  if (taxonomyKey && subcategories.length > 0) {
+    return (
+      <aside className="left-sidebar" style={{ width: 200, flexShrink: 0, paddingTop: 20 }}>
+        <nav style={{ position: 'sticky', top: 72, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* Back to main nav */}
+          <Link
+            href={basePath}
+            className="sidebar-nav-item"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 12px',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: 'none',
+              color: 'var(--text-muted)',
+              marginBottom: 4,
+            }}
+          >
+            <SidebarIcon name="back" size={14} />
+            {categoryLabel}
+          </Link>
+
+          <div style={{ height: 1, background: 'var(--border-light)', margin: '0 10px 6px' }} />
+
+          {/* "All" item */}
+          <Link
+            href={basePath}
+            className="sidebar-nav-item"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '7px 12px',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: !activeSub ? 600 : 500,
+              textDecoration: 'none',
+              color: !activeSub ? 'var(--text-primary)' : 'var(--text-secondary)',
+              background: !activeSub ? 'var(--bg-hover)' : 'transparent',
+            }}
+          >
+            <span>All</span>
+            {taxonomyData?.allCount != null && (
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>
+                {taxonomyData.allCount}
+              </span>
+            )}
+          </Link>
+
+          {/* Subcategory items */}
+          {subcategories.map((item) => {
+            const isActive = activeSub === item.slug;
+            return (
+              <Link
+                key={item.slug}
+                href={`${basePath}/${item.slug}`}
+                className="sidebar-nav-item"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '7px 12px',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: isActive ? 600 : 500,
+                  textDecoration: 'none',
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  background: isActive ? 'var(--bg-hover)' : 'transparent',
+                }}
+              >
+                <span>{item.label}</span>
+                {item.count != null && (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>
+                    {item.count}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+    );
+  }
+
+  // Default: main navigation sidebar
   return (
     <aside className="left-sidebar" style={{ width: 200, flexShrink: 0, paddingTop: 20 }}>
       <nav style={{ position: 'sticky', top: 72, display: 'flex', flexDirection: 'column', gap: 2 }}>
