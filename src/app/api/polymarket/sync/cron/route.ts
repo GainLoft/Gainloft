@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   try {
     for (const { tag, quickPages } of SPORT_TAGS) {
-      const pageSize = 100;
+      const pageSize = 20;
       for (let page = 0; page < quickPages; page++) {
         try {
           const sp = new URLSearchParams({
@@ -66,12 +66,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Resolution sync
+    // Resolution sync — only check 20 most recent to stay within time budget
     try {
       const { rows: activeMarkets } = await pool.query(
         `SELECT id, polymarket_id FROM markets
          WHERE polymarket_id IS NOT NULL AND closed = false
-         ORDER BY created_at DESC LIMIT 200`
+         ORDER BY created_at DESC LIMIT 20`
       );
       for (const market of activeMarkets) {
         try {
