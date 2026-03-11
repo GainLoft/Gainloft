@@ -3,14 +3,30 @@ import pool from '@/lib/db';
 
 export const maxDuration = 300; // 5 min for Pro plan
 
-// GET = quick DB test
+// GET = quick DB test (read + write)
 export async function GET() {
   try {
+    const t0 = Date.now();
     const { rows } = await pool.query('SELECT NOW() as time, current_database() as db');
-    const { rows: tables } = await pool.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`);
-    return NextResponse.json({ ok: true, ...rows[0], tables: tables.map(t => t.tablename) });
+    const readMs = Date.now() - t0;
+
+    // Test write
+    const t1 = Date.now();
+    const { rows: writeTest } = await pool.query(
+      `INSERT INTO event_groups (polymarket_id, title, slug, category)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET title = EXCLUDED.title
+       RETURNING id`,
+      ['test-123', 'DB Write Test', 'db-write-test', 'Test']
+    );
+    const writeMs = Date.now() - t1;
+
+    // Clean up
+    await pool.query(`DELETE FROM event_groups WHERE polymarket_id = 'test-123'`);
+
+    return NextResponse.json({ ok: true, ...rows[0], readMs, writeMs, writeId: writeTest[0]?.id });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: (err as Error).message, stack: (err as Error).stack?.split('\n').slice(0, 3) }, { status: 500 });
   }
 }
 
