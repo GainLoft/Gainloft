@@ -4,11 +4,19 @@ const nextConfig = {
   compress: true,
   headers: async () => [
     {
-      // ISR pages: Cloudflare caches 30s, browser caches 10s
-      source: '/sports',
+      // All static pages: CDN caches 5 min, browser 30s, stale OK for 10 min
+      source: '/:path(|sports|breaking|new|markets|games|leaderboard|portfolio|watchlist|rewards|help|docs|terms|apis)',
       headers: [
-        { key: 'Cache-Control', value: 'public, max-age=10, s-maxage=30, stale-while-revalidate=60' },
-        { key: 'CDN-Cache-Control', value: 'max-age=30' },
+        { key: 'Cache-Control', value: 'public, max-age=30, s-maxage=300, stale-while-revalidate=600' },
+        { key: 'CDN-Cache-Control', value: 'max-age=300' },
+      ],
+    },
+    {
+      // Category pages
+      source: '/:category(politics|crypto|sports|business|science|culture|world)',
+      headers: [
+        { key: 'Cache-Control', value: 'public, max-age=30, s-maxage=300, stale-while-revalidate=600' },
+        { key: 'CDN-Cache-Control', value: 'max-age=300' },
       ],
     },
     {
