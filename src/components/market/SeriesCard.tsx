@@ -68,7 +68,7 @@ export default function SeriesCard({ series }: { series: SeriesData }) {
       <div className="flex items-start gap-3">
         <div className="flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-lg overflow-hidden">
           {series.image ? (
-            <img src={series.image} alt="" className="h-[40px] w-[40px] rounded-lg object-cover" />
+            <img src={series.image} alt="" className="h-[40px] w-[40px] rounded-lg object-cover" loading="lazy" />
           ) : (
             <div className="h-[40px] w-[40px] rounded-lg" style={{ background: 'var(--bg-surface)' }} />
           )}

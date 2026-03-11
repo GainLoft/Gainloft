@@ -1,12 +1,10 @@
-'use client';
-
 import SubcategoryPage from '@/components/market/SubcategoryPage';
-import { useParams } from 'next/navigation';
 import { localSlugToPmTag, slugToLabel } from '@/lib/categories';
 
-export default function DynamicSubPage() {
-  const params = useParams();
-  const category = params.category as string;
+export const revalidate = 300;
+
+export default async function DynamicSubPage({ params }: { params: { category: string; sub: string } }) {
+  const { category } = params;
   const label = slugToLabel(category);
   const pmTag = localSlugToPmTag(category);
 

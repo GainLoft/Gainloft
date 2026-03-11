@@ -1,13 +1,21 @@
-import Script from 'next/script';
 import NewClient from './NewClient';
+import { Market } from '@/lib/types';
 
-export default function NewPage() {
-  return (
-    <>
-      <Script id="prefetch-new" strategy="beforeInteractive">{`
-        window.__NEW_PROMISE = fetch('/api/polymarket/events?limit=100&order=newest').then(function(r){return r.json()}).then(function(d){window.__NEW_DATA=d;return d});
-      `}</Script>
-      <NewClient />
-    </>
-  );
+export const revalidate = 300;
+
+async function getNewData(): Promise<Market[]> {
+  try {
+    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : (process.env.SITE_URL || 'http://localhost:3000');
+    const res = await fetch(`${base}/api/polymarket/events?limit=24&order=newest`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+export default async function NewPage() {
+  const markets = await getNewData();
+  return <NewClient initialMarkets={markets} />;
 }

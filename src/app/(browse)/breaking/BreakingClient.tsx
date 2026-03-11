@@ -1,12 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
-
-declare global {
-  interface Window { __BREAKING_PROMISE?: Promise<any>; __BREAKING_DATA?: any; }
-}
 
 const swrFetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -100,7 +96,7 @@ function BreakingRow({ market, rank }: { market: BreakingMarket; rank: number })
       {/* Image */}
       <div style={{ width: 36, height: 36, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
         {market.image ? (
-          <img src={market.image} alt="" style={{ width: 36, height: 36, objectFit: 'cover' }} />
+          <img src={market.image} alt="" loading="lazy" style={{ width: 36, height: 36, objectFit: 'cover' }} />
         ) : (
           <div style={{ width: 36, height: 36, background: 'var(--bg-surface)', borderRadius: 8 }} />
         )}
@@ -234,7 +230,7 @@ function SidebarCard({ title, icon, markets, loading }: {
                 {/* Image */}
                 <div style={{ width: 32, height: 32, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
                   {m.image_url ? (
-                    <img src={m.image_url} alt="" style={{ width: 32, height: 32, objectFit: 'cover' }} />
+                    <img src={m.image_url} alt="" loading="lazy" style={{ width: 32, height: 32, objectFit: 'cover' }} />
                   ) : (
                     <div style={{ width: 32, height: 32, background: 'var(--bg-surface)' }} />
                   )}
@@ -281,18 +277,8 @@ function SidebarCard({ title, icon, markets, loading }: {
 
 // ── Page ──
 
-export default function BreakingClient() {
+export default function BreakingClient({ initialData }: { initialData?: { markets: BreakingMarket[] } }) {
   const [activeCategory, setActiveCategory] = useState('all');
-  const prefetchUsed = useRef(false);
-
-  const [initialData] = useState<{ markets: BreakingMarket[] } | undefined>(() => {
-    if (typeof window !== 'undefined' && window.__BREAKING_DATA) {
-      const d = window.__BREAKING_DATA;
-      window.__BREAKING_DATA = undefined;
-      return d;
-    }
-    return undefined;
-  });
 
   const apiUrl = activeCategory !== 'all'
     ? `/api/polymarket/breaking?category=${encodeURIComponent(activeCategory)}`
@@ -300,15 +286,7 @@ export default function BreakingClient() {
 
   const { data, isLoading } = useSWR<{ markets: BreakingMarket[] }>(
     apiUrl,
-    (url: string) => {
-      if (!prefetchUsed.current && activeCategory === 'all' && window.__BREAKING_PROMISE) {
-        prefetchUsed.current = true;
-        const p = window.__BREAKING_PROMISE;
-        window.__BREAKING_PROMISE = undefined;
-        return p;
-      }
-      return fetch(url).then(r => r.json());
-    },
+    swrFetcher,
     { refreshInterval: 30000, fallbackData: initialData },
   );
 

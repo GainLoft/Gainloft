@@ -171,7 +171,7 @@ export default function MarketCard({ market }: { market: Market }) {
         <div className="flex items-start gap-3">
           <div className="flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-lg overflow-hidden">
             {market.image_url ? (
-              <img src={market.image_url} alt="" className="h-[40px] w-[40px] rounded-lg object-cover" />
+              <img src={market.image_url} alt="" className="h-[40px] w-[40px] rounded-lg object-cover" loading="lazy" />
             ) : (
               <div className="h-[40px] w-[40px] rounded-lg" style={{ background: 'var(--bg-surface)' }} />
             )}
@@ -242,7 +242,7 @@ export default function MarketCard({ market }: { market: Market }) {
       <div className="flex items-start gap-3">
         <div className="flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-lg overflow-hidden">
           {market.image_url ? (
-            <img src={market.image_url} alt="" className="h-[40px] w-[40px] rounded-lg object-cover" />
+            <img src={market.image_url} alt="" className="h-[40px] w-[40px] rounded-lg object-cover" loading="lazy" />
           ) : (
             <div className="h-[40px] w-[40px] rounded-lg" style={{ background: 'var(--bg-surface)' }} />
           )}

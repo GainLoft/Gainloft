@@ -2,21 +2,24 @@
 const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   compress: true,
+  experimental: {
+    optimizeCss: true, // Inlines critical CSS → eliminates render-blocking external CSS
+  },
   headers: async () => [
     {
-      // All static pages: CDN caches 5 min, browser 30s, stale OK for 10 min
-      source: '/:path(|sports|breaking|new|markets|games|leaderboard|portfolio|watchlist|rewards|help|docs|terms|apis)',
+      // All static pages
+      source: '/:path(|sports|breaking|new|markets|games|leaderboard|portfolio|watchlist|rewards|help|docs|terms|apis|accuracy|activity)',
       headers: [
         { key: 'Cache-Control', value: 'public, max-age=30, s-maxage=300, stale-while-revalidate=600' },
-        { key: 'CDN-Cache-Control', value: 'max-age=300' },
+        { key: 'CDN-Cache-Control', value: 'max-age=600, stale-while-revalidate=3600' },
       ],
     },
     {
-      // Category pages
-      source: '/:category(politics|crypto|sports|business|science|culture|world)',
+      // Category pages (all known categories)
+      source: '/:category(politics|crypto|sports|finance|geopolitics|tech|culture|economy|climate|mentions|elections|music|esports|iran|world|business|science)',
       headers: [
         { key: 'Cache-Control', value: 'public, max-age=30, s-maxage=300, stale-while-revalidate=600' },
-        { key: 'CDN-Cache-Control', value: 'max-age=300' },
+        { key: 'CDN-Cache-Control', value: 'max-age=600, stale-while-revalidate=3600' },
       ],
     },
     {
@@ -27,11 +30,11 @@ const nextConfig = {
       ],
     },
     {
-      // API responses: Cloudflare caches 5 min, stale OK for 10 min
+      // API responses
       source: '/api/polymarket/:path*',
       headers: [
         { key: 'Cache-Control', value: 'public, max-age=10, s-maxage=300, stale-while-revalidate=600' },
-        { key: 'CDN-Cache-Control', value: 'max-age=300' },
+        { key: 'CDN-Cache-Control', value: 'max-age=300, stale-while-revalidate=3600' },
       ],
     },
   ],

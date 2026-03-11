@@ -16,7 +16,7 @@ const PAGE_SIZE = 100;
  * Fetches markets from Polymarket API directly (live) with full pagination.
  * Falls back to local DB if live fails.
  */
-export default function CategoryGrid({ category, subtag, tag }: { category: string; subtag?: string; tag?: string }) {
+export default function CategoryGrid({ category, subtag, tag, initialMarkets }: { category: string; subtag?: string; tag?: string; initialMarkets?: Market[] }) {
   const slug = tag || getCategorySlug(category);
   const tagParam = subtag || slug;
   const [extraMarkets, setExtraMarkets] = useState<Market[]>([]);
@@ -28,7 +28,7 @@ export default function CategoryGrid({ category, subtag, tag }: { category: stri
   const { data: liveMarkets, error: liveError, isLoading: liveLoading } = useSWR<Market[]>(
     `/api/polymarket/events/live?tag=${encodeURIComponent(tagParam)}&limit=${PAGE_SIZE}&offset=0`,
     swrFetcher,
-    { refreshInterval: 30000 }
+    { refreshInterval: 30000, fallbackData: initialMarkets && initialMarkets.length > 0 ? initialMarkets : undefined }
   );
 
   // Fallback: DB-backed endpoint (used if live returns empty or errors)

@@ -226,7 +226,7 @@ function MatchCard({
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {team.logo ? (
-                    <img src={team.logo} alt={team.abbr} style={{ width: 32, height: 32, objectFit: 'contain' }}
+                    <img src={team.logo} alt={team.abbr} loading="lazy" style={{ width: 32, height: 32, objectFit: 'contain' }}
                       onError={(e) => {
                         const el = e.target as HTMLImageElement;
                         el.style.display = 'none';
@@ -356,7 +356,7 @@ function FuturesCard({
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px 10px' }}>
           {event.image_url && (
-            <img src={event.image_url} alt="" style={{
+            <img src={event.image_url} alt="" loading="lazy" style={{
               width: 28, height: 28, borderRadius: 6, objectFit: 'contain', flexShrink: 0,
             }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           )}
@@ -537,33 +537,8 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   useEffect(() => {
     if (initialLoadRef.current) {
       initialLoadRef.current = false;
+      // If we have server-side data, skip the initial fetch
       if (viewTab === 'live' && !activeFilter && initialEvents.length > 0) return;
-      // Use already-resolved data if available (instant render, no skeleton)
-      if (viewTab === 'live' && !activeFilter && (window as any).__SPORTS_DATA) {
-        const data = (window as any).__SPORTS_DATA as PageResponse;
-        (window as any).__SPORTS_DATA = null;
-        (window as any).__SPORTS_PROMISE = null;
-        setEvents(data.events || []);
-        if (data.taxonomy) setTaxonomy(data.taxonomy);
-        setHasMore(data.hasMore ?? false);
-        setTotal(data.total ?? 0);
-        setIsLoading(false);
-        return;
-      }
-      // Fallback: use pre-started fetch promise
-      if (viewTab === 'live' && !activeFilter && (window as any).__SPORTS_PROMISE) {
-        setIsLoading(true);
-        (window as any).__SPORTS_PROMISE
-          .then((data: PageResponse) => {
-            setEvents(data.events || []);
-            if (data.taxonomy) setTaxonomy(data.taxonomy);
-            setHasMore(data.hasMore ?? false);
-            setTotal(data.total ?? 0);
-          })
-          .catch(() => { fetchPage(0, false); })
-          .finally(() => { setIsLoading(false); (window as any).__SPORTS_PROMISE = null; });
-        return;
-      }
     }
     setEvents([]);
     setHasMore(false);
@@ -916,7 +891,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                     <div key={groupKey} style={{ marginBottom: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         {leagueImage && (
-                          <img src={leagueImage} alt="" style={{
+                          <img src={leagueImage} alt="" loading="lazy" style={{
                             width: 24, height: 24, borderRadius: 6, objectFit: 'contain', flexShrink: 0,
                           }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         )}

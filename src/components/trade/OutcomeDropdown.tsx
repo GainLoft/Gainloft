@@ -39,7 +39,7 @@ export default function OutcomeDropdown({ markets, selectedId, onSelect }: Props
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden', minWidth: 0, flex: 1 }}>
           {selected?.image_url ? (
-            <img src={selected.image_url} alt="" style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'contain', background: 'var(--bg-surface)', flexShrink: 0 }} />
+            <img src={selected.image_url} alt="" loading="lazy" style={{ width: 28, height: 28, borderRadius: 6, objectFit: 'contain', background: 'var(--bg-surface)', flexShrink: 0 }} />
           ) : (
             <div style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0 }}>
               {selectedLabel.charAt(0)}
@@ -92,7 +92,7 @@ export default function OutcomeDropdown({ markets, selectedId, onSelect }: Props
                 onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
               >
                 {m.image_url ? (
-                  <img src={m.image_url} alt="" style={{ width: 24, height: 24, borderRadius: 5, objectFit: 'contain', background: 'var(--bg-surface)', flexShrink: 0 }} />
+                  <img src={m.image_url} alt="" loading="lazy" style={{ width: 24, height: 24, borderRadius: 5, objectFit: 'contain', background: 'var(--bg-surface)', flexShrink: 0 }} />
                 ) : (
                   <div style={{ width: 24, height: 24, borderRadius: 5, background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0 }}>
                     {label.charAt(0)}

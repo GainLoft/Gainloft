@@ -1,13 +1,21 @@
-import Script from 'next/script';
 import HomeClient from './HomeClient';
+import { Market } from '@/lib/types';
 
-export default function HomePage() {
-  return (
-    <>
-      <Script id="prefetch-home" strategy="beforeInteractive">{`
-        window.__HOME_PROMISE = fetch('/api/polymarket/events?limit=50&order=volume24hr').then(function(r){return r.json()}).then(function(d){window.__HOME_DATA=d;return d});
-      `}</Script>
-      <HomeClient />
-    </>
-  );
+export const revalidate = 300; // ISR: regenerate every 5 min
+
+async function getHomeData(): Promise<Market[]> {
+  try {
+    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : (process.env.SITE_URL || 'http://localhost:3000');
+    const res = await fetch(`${base}/api/polymarket/events?limit=24&order=volume24hr`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+export default async function HomePage() {
+  const markets = await getHomeData();
+  return <HomeClient initialMarkets={markets} />;
 }

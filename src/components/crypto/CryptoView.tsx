@@ -103,7 +103,7 @@ function CryptoMarketCard({ market }: { market: Market }) {
       <div className="flex gap-2.5 mb-3">
         <div className="flex-shrink-0">
           {market.image_url ? (
-            <img src={market.image_url} alt="" className="rounded-[6px] object-cover" style={{ width: 40, height: 40, background: 'var(--bg-surface)' }} />
+            <img src={market.image_url} alt="" className="rounded-[6px] object-cover" loading="lazy" style={{ width: 40, height: 40, background: 'var(--bg-surface)' }} />
           ) : (
             <div className="rounded-[6px]" style={{ width: 40, height: 40, background: 'var(--bg-surface)' }} />
           )}

@@ -1,16 +1,12 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
 import MarketCard from '@/components/market/MarketCard';
 import { Market } from '@/lib/types';
 import { CATEGORIES, getCategorySlug } from '@/lib/categories';
 import { useLiveMarkets } from '@/hooks/useLivePrices';
-
-declare global {
-  interface Window { __HOME_PROMISE?: Promise<any>; __HOME_DATA?: any; }
-}
 
 const swrFetcher = (url: string) => fetch(url).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
 
@@ -81,7 +77,7 @@ const BROWSE_FILTERS = [
 
 // ── Page ──
 
-export default function HomeClient() {
+export default function HomeClient({ initialMarkets = [] }: { initialMarkets?: Market[] }) {
   const [allMarketTag, setAllMarketTag] = useState('All');
   const [featuredIdx, setFeaturedIdx] = useState(0);
   const [browseFilter, setBrowseFilter] = useState('trending');
@@ -92,33 +88,14 @@ export default function HomeClient() {
   const [statusFilter, setStatusFilter] = useState<'active' | 'resolved'>('active');
 
   // ── Fetch real data from database ──
-  const prefetchUsed = useRef(false);
   const eventsUrl = allMarketTag === 'All'
     ? '/api/polymarket/events?limit=50&order=volume24hr'
     : `/api/polymarket/events?limit=100&order=volume24hr&tag=${encodeURIComponent(getCategorySlug(allMarketTag))}`;
 
-  // Use prefetched data as fallback (already resolved by the time React hydrates)
-  const [initialData] = useState<Market[] | undefined>(() => {
-    if (typeof window !== 'undefined' && window.__HOME_DATA) {
-      const d = window.__HOME_DATA;
-      window.__HOME_DATA = undefined;
-      return Array.isArray(d) ? d : undefined;
-    }
-    return undefined;
-  });
-
-  const { data: rawMarkets = initialData || [], isLoading } = useSWR<Market[]>(
+  const { data: rawMarkets = initialMarkets, isLoading } = useSWR<Market[]>(
     eventsUrl,
-    (url: string) => {
-      if (!prefetchUsed.current && allMarketTag === 'All' && window.__HOME_PROMISE) {
-        prefetchUsed.current = true;
-        const p = window.__HOME_PROMISE;
-        window.__HOME_PROMISE = undefined;
-        return p.then((d: any) => Array.isArray(d) ? d : []);
-      }
-      return fetch(url).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
-    },
-    { refreshInterval: 30000, fallbackData: initialData }
+    swrFetcher,
+    { refreshInterval: 30000, fallbackData: initialMarkets.length > 0 ? initialMarkets : undefined }
   );
 
   // Merge live CLOB midpoint prices into all markets
@@ -276,7 +253,7 @@ export default function HomeClient() {
               <div className="flex gap-8">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 mb-6">
-                    <img src={featured.image} alt="" className="h-[48px] w-[48px] rounded-[10px] object-cover flex-shrink-0" />
+                    <img src={featured.image} alt="" className="h-[48px] w-[48px] rounded-[10px] object-cover flex-shrink-0" loading="lazy" />
                     <h2 className="text-[24px] font-bold leading-[30px] tracking-[-0.02em]" style={{ color: 'var(--text-primary)' }}>
                       {featured.title}
                     </h2>
@@ -288,7 +265,7 @@ export default function HomeClient() {
                       {featured.candidates.map((c) => (
                         <div key={c.name} className="flex items-center gap-3">
                           {c.img ? (
-                            <img src={c.img} alt="" className="h-[36px] w-[36px] rounded-full object-cover flex-shrink-0" />
+                            <img src={c.img} alt="" className="h-[36px] w-[36px] rounded-full object-cover flex-shrink-0" loading="lazy" />
                           ) : (
                             <div className="h-[36px] w-[36px] rounded-full flex-shrink-0 flex items-center justify-center text-[14px] font-bold" style={{ background: 'var(--bg-surface)', color: 'var(--text-muted)' }}>{c.name.charAt(0)}</div>
                           )}
@@ -576,13 +553,13 @@ export default function HomeClient() {
           <Link href={`/event/${featured.slug}`} className="block">
             <div className="text-[13px] mb-2" style={{ color: 'var(--text-secondary)' }}>{featured.category}</div>
             <div className="flex items-center gap-3 mb-4">
-              {featured.image ? <img src={featured.image} alt="" className="h-10 w-10 rounded-lg object-cover" /> : <div className="h-10 w-10 rounded-lg" style={{ background: 'var(--bg-surface)' }} />}
+              {featured.image ? <img src={featured.image} alt="" className="h-10 w-10 rounded-lg object-cover" loading="lazy" /> : <div className="h-10 w-10 rounded-lg" style={{ background: 'var(--bg-surface)' }} />}
               <h2 className="text-[20px] font-bold" style={{ color: 'var(--text-primary)' }}>{featured.title}</h2>
             </div>
             {featured.candidates.map((c) => (
               <div key={c.name} className="flex items-center gap-2 py-2">
                 {c.img ? (
-                  <img src={c.img} alt="" className="h-8 w-8 rounded-full object-cover" />
+                  <img src={c.img} alt="" className="h-8 w-8 rounded-full object-cover" loading="lazy" />
                 ) : (
                   <div className="h-8 w-8 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: 'var(--bg-surface)', color: 'var(--text-muted)' }}>{c.name.charAt(0)}</div>
                 )}

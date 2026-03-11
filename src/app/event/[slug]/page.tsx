@@ -536,7 +536,7 @@ function MultiOutcomeEventPage({ event, relatedEvents = [] }: { event: EventGrou
       {/* Event header: image + title + meta + action buttons */}
       <div className="flex items-start" style={{ gap: 16, marginBottom: 12 }}>
         {event.image_url ? (
-          <img src={event.image_url} alt="" className="flex-shrink-0 object-cover" style={{ width: 80, height: 80, borderRadius: 12 }} />
+          <img src={event.image_url} alt="" className="flex-shrink-0 object-cover" loading="lazy" style={{ width: 80, height: 80, borderRadius: 12 }} />
         ) : (
           <div className="flex-shrink-0" style={{ width: 80, height: 80, borderRadius: 12, background: 'var(--bg-surface)' }} />
         )}
@@ -969,7 +969,7 @@ function MultiOutcomeEventPage({ event, relatedEvents = [] }: { event: EventGrou
                     >
                       <div className="flex items-center min-w-0" style={{ gap: 12 }}>
                         {m.image_url && (
-                          <img src={m.image_url} alt="" className="flex-shrink-0 object-cover" style={{ width: 32, height: 32, borderRadius: 8 }} />
+                          <img src={m.image_url} alt="" className="flex-shrink-0 object-cover" loading="lazy" style={{ width: 32, height: 32, borderRadius: 8 }} />
                         )}
                         <div className="min-w-0">
                           <div className="font-medium truncate" style={{ fontSize: 14, color: 'var(--text-primary)' }}>{m.question}</div>
@@ -1180,7 +1180,7 @@ function SingleMarketPage({ market, relatedEvents = [] }: { market: Market; rela
       {/* Market header: image + title + meta + action buttons */}
       <div className="flex items-start" style={{ gap: 16, marginBottom: 12 }}>
         {market.image_url ? (
-          <img src={market.image_url} alt="" className="flex-shrink-0 object-cover" style={{ width: 80, height: 80, borderRadius: 12 }} />
+          <img src={market.image_url} alt="" className="flex-shrink-0 object-cover" loading="lazy" style={{ width: 80, height: 80, borderRadius: 12 }} />
         ) : (
           <div className="flex-shrink-0" style={{ width: 80, height: 80, borderRadius: 12, background: 'var(--bg-surface)' }} />
         )}
@@ -1491,7 +1491,7 @@ function SingleMarketPage({ market, relatedEvents = [] }: { market: Market; rela
                     >
                       <div className="flex items-center min-w-0" style={{ gap: 12 }}>
                         {m.image_url && (
-                          <img src={m.image_url} alt="" className="flex-shrink-0 object-cover" style={{ width: 32, height: 32, borderRadius: 8 }} />
+                          <img src={m.image_url} alt="" className="flex-shrink-0 object-cover" loading="lazy" style={{ width: 32, height: 32, borderRadius: 8 }} />
                         )}
                         <div className="min-w-0">
                           <div className="font-medium truncate" style={{ fontSize: 14, color: 'var(--text-primary)' }}>{m.question}</div>
@@ -1851,7 +1851,7 @@ function LiveMarketPage({ event }: { event: EventGroup }) {
         return (
           <div className="flex items-center" style={{ gap: 16, marginBottom: 20 }}>
             {event.image_url ? (
-              <img src={event.image_url} alt="" className="flex-shrink-0 object-cover" style={{ width: 56, height: 56, borderRadius: 12 }} />
+              <img src={event.image_url} alt="" className="flex-shrink-0 object-cover" loading="lazy" style={{ width: 56, height: 56, borderRadius: 12 }} />
             ) : (
               <div className="flex-shrink-0" style={{ width: 56, height: 56, borderRadius: 12, background: 'var(--bg-surface)' }} />
             )}
@@ -2435,7 +2435,7 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
             {/* Team 1 */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
               <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <img src={match.team1.logo} alt="" style={{ width: 40, height: 40, objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                <img src={match.team1.logo} alt="" loading="lazy" style={{ width: 40, height: 40, objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               </div>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{match.team1.abbr}</span>
             </div>
@@ -2470,7 +2470,7 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
             {/* Team 2 */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
               <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <img src={match.team2.logo} alt="" style={{ width: 40, height: 40, objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                <img src={match.team2.logo} alt="" loading="lazy" style={{ width: 40, height: 40, objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               </div>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{match.team2.abbr}</span>
             </div>
@@ -2682,7 +2682,7 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatVolume(g.volume)} Vol.</div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {g.image_url && <img src={g.image_url} alt="" style={{ width: 16, height: 16, borderRadius: 4, objectFit: 'cover' }} />}
+                          {g.image_url && <img src={g.image_url} alt="" loading="lazy" style={{ width: 16, height: 16, borderRadius: 4, objectFit: 'cover' }} />}
                           <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{g.tokens.find(t => t.outcome === 'Yes')?.label ?? g.question.split(' ')[0]}</span>
                         </div>
                         <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{Math.round(yesPrice * 100)}¢</span>

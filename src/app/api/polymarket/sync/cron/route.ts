@@ -187,6 +187,15 @@ export async function GET(req: NextRequest) {
         `${baseUrl}/api/polymarket/events/live?tag=sports&limit=100`,
       ];
       await Promise.allSettled(warmUrls.map(url => fetch(url, { cache: 'no-store' }).catch(() => {})));
+
+      // Warm ISR page caches (triggers revalidation so HTML contains real data)
+      const pageUrls = [
+        `${baseUrl}/`,
+        `${baseUrl}/sports`,
+        `${baseUrl}/breaking`,
+        `${baseUrl}/new`,
+      ];
+      await Promise.allSettled(pageUrls.map(url => fetch(url, { cache: 'no-store' }).catch(() => {})));
     }
   } catch (err) {
     return NextResponse.json({

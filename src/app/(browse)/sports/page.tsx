@@ -1,19 +1,40 @@
-import Script from 'next/script';
 import SportsClient from './SportsClient';
+import { EventGroup } from '@/lib/types';
 
-export default function SportsPage() {
+export const revalidate = 300;
+
+interface SportsData {
+  events: EventGroup[];
+  taxonomy: { slug: string; label: string; count: number; leagues: { slug: string; label: string; count: number }[] }[];
+  hasMore: boolean;
+  total: number;
+}
+
+async function getSportsData(): Promise<SportsData> {
+  try {
+    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : (process.env.SITE_URL || 'http://localhost:3000');
+    const res = await fetch(`${base}/api/polymarket/sports?tab=live&offset=0&limit=30`);
+    if (!res.ok) return { events: [], taxonomy: [], hasMore: false, total: 0 };
+    const data = await res.json();
+    return {
+      events: data.events || [],
+      taxonomy: data.taxonomy || [],
+      hasMore: data.hasMore ?? false,
+      total: data.total ?? 0,
+    };
+  } catch {
+    return { events: [], taxonomy: [], hasMore: false, total: 0 };
+  }
+}
+
+export default async function SportsPage() {
+  const data = await getSportsData();
   return (
-    <>
-      {/* Start API fetch immediately, before JS bundles load */}
-      <Script id="prefetch-sports" strategy="beforeInteractive">{`
-        window.__SPORTS_PROMISE = fetch('/api/polymarket/sports-fast?tab=live&offset=0&limit=30').then(function(r){return r.json()}).then(function(d){window.__SPORTS_DATA=d;return d});
-      `}</Script>
-      <SportsClient
-        initialEvents={[]}
-        initialTaxonomy={[]}
-        initialHasMore={false}
-        initialTotal={0}
-      />
-    </>
+    <SportsClient
+      initialEvents={data.events}
+      initialTaxonomy={data.taxonomy}
+      initialHasMore={data.hasMore}
+      initialTotal={data.total}
+    />
   );
 }
