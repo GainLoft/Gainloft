@@ -4,36 +4,15 @@ import pool from '@/lib/db';
 export const maxDuration = 300; // 5 min for Pro plan
 export const preferredRegion = 'sin1';
 
-// GET = mini sync test (5 events) with timing
+// GET = quick DB test
 export async function GET() {
-  const log: string[] = [];
-  const t0 = Date.now();
   try {
-    const { rows } = await pool.query('SELECT NOW() as time');
-    log.push(`db: ${Date.now() - t0}ms`);
-
-    const sp = new URLSearchParams({ tag_slug: 'sports', limit: '5', order: 'volume24hr', ascending: 'false', active: 'true' });
-    const t1 = Date.now();
-    const res = await fetch(`${GAMMA_API}/events?${sp}`, { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } });
-    const events: any[] = await res.json();
-    log.push(`fetch: ${Date.now() - t1}ms, count: ${events.length}`);
-
-    let synced = 0;
-    for (const e of events) {
-      const te = Date.now();
-      const mktCount = (e.markets || []).length;
-      try {
-        await upsertEvent(e);
-        synced++;
-        log.push(`ok ${e.slug} (${mktCount}mkts): ${Date.now() - te}ms`);
-      } catch (err) {
-        log.push(`err ${e.slug} (${mktCount}mkts): ${(err as Error).message} (${Date.now() - te}ms)`);
-      }
-    }
-
-    return NextResponse.json({ synced, total: `${Date.now() - t0}ms`, log });
+    const t0 = Date.now();
+    const { rows } = await pool.query('SELECT NOW() as time, current_database() as db');
+    const readMs = Date.now() - t0;
+    return NextResponse.json({ ok: true, ...rows[0], readMs });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message, total: `${Date.now() - t0}ms`, log }, { status: 500 });
+    return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 });
   }
 }
 

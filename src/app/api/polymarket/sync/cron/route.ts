@@ -8,8 +8,8 @@ export const preferredRegion = 'sin1';
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 
 const SPORT_TAGS: { tag: string; quickPages: number }[] = [
-  { tag: 'sports', quickPages: 2 },
-  { tag: 'esports', quickPages: 2 },
+  { tag: 'sports', quickPages: 3 },
+  { tag: 'esports', quickPages: 3 },
 ];
 
 const MAX_MARKETS_PER_EVENT = 30;
