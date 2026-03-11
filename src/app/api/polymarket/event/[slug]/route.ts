@@ -121,6 +121,18 @@ export async function GET(
     const tokensByMarket = await loadTokens([mRow.id]);
     const market = rowToMarket(mRow, tokensByMarket[mRow.id] || []);
 
+    // Fix date-only end_date_iso for timestamp-based series events (e.g. btc-updown-5m-1773244500)
+    // The slug timestamp is the window start; end = start + interval
+    const seriesTsMatch = slug.match(/^(.+?)-(\d{10})$/);
+    if (seriesTsMatch && market.end_date_iso && !market.end_date_iso.includes('T')) {
+      const ts = parseInt(seriesTsMatch[2]);
+      let interval = 300; // default 5m
+      if (slug.includes('-15m')) interval = 900;
+      else if (slug.includes('-1h') || slug.includes('-hourly')) interval = 3600;
+      else if (slug.includes('-4h')) interval = 14400;
+      market.end_date_iso = new Date((ts + interval) * 1000).toISOString();
+    }
+
     // Build match info for standalone sports markets (simple 2-outcome moneyline)
     const isSportsMarket = (mRow.tags || []).some((t: any) =>
       ['sports', 'esports'].includes(t.slug)
@@ -388,7 +400,7 @@ async function fetchFromPolymarket(slug: string): Promise<any | null> {
             winning_outcome: null,
             resolved_at: m.closedTime || null,
             accepting_orders: m.active && !m.closed,
-            end_date_iso: m.endDateIso || m.endDate || null,
+            end_date_iso: m.endDate || m.endDateIso || null,
             volume: parseFloat(m.volume) || 0,
             volume_24hr: m.volume24hr || 0,
             liquidity: parseFloat(m.liquidity) || 0,
@@ -442,7 +454,7 @@ async function fetchFromPolymarket(slug: string): Promise<any | null> {
             winning_outcome: null,
             resolved_at: m.closedTime || null,
             accepting_orders: m.active && !m.closed,
-            end_date_iso: m.endDateIso || m.endDate || null,
+            end_date_iso: m.endDate || m.endDateIso || null,
             volume: parseFloat(m.volume) || ev.volume || 0,
             volume_24hr: m.volume24hr || ev.volume24hr || 0,
             liquidity: parseFloat(m.liquidity) || ev.liquidity || 0,
@@ -485,7 +497,7 @@ async function fetchFromPolymarket(slug: string): Promise<any | null> {
           winning_outcome: null,
           resolved_at: m.closedTime || null,
           accepting_orders: m.active && !m.closed,
-          end_date_iso: m.endDateIso || m.endDate || null,
+          end_date_iso: m.endDate || m.endDateIso || null,
           volume: parseFloat(m.volume) || 0,
           volume_24hr: m.volume24hr || 0,
           liquidity: parseFloat(m.liquidity) || 0,
