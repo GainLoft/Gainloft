@@ -328,35 +328,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
 
   // Cache slimmed response for edge endpoint (unfiltered first page only)
   if (!sportFilter && !leagueFilter && offset === 0) {
-    const slimEvents = trimmed.map(e => ({
-      ...e,
-      description: null,
-      tags: e.tags?.slice(0, 3) || [],
-      markets: (e.markets || []).map(m => ({
-        id: m.id, condition_id: m.condition_id, question: m.question,
-        group_item_title: m.group_item_title, slug: m.slug,
-        description: null, category: m.category, tags: [],
-        image_url: null, resolution_source: null,
-        tokens: (m.tokens || []).map(t => ({
-          id: t.id, token_id: t.token_id, outcome: t.outcome, price: t.price,
-        })),
-        minimum_tick_size: m.minimum_tick_size, minimum_order_size: m.minimum_order_size,
-        active: m.active, closed: m.closed, resolved: m.resolved,
-        end_date_iso: m.end_date_iso, volume: m.volume,
-        liquidity: m.liquidity, neg_risk: m.neg_risk,
-      })),
-    }));
-    const slimData = { events: slimEvents, hasMore, total, ...(taxonomy ? { taxonomy } : {}) };
-    try {
-      await pool.query(
-        `INSERT INTO api_cache (key, data, updated_at) VALUES ('sports_processed', $1::jsonb, NOW())
-         ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
-        [JSON.stringify(slimData)]
-      );
-      console.log(`[sports] Cache write OK, slimData size: ${JSON.stringify(slimData).length}`);
-    } catch (cacheErr) {
-      console.error('[sports] Cache write FAILED:', cacheErr);
-    }
+    writeSlimCache(trimmed, hasMore, total, taxonomy).catch(() => {});
   }
 
   return NextResponse.json(
@@ -746,9 +718,14 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
     const events = mergeMatchEvents(rawEvents);
     const trimmed = events.slice(0, limit);
     const taxonomy = await buildTaxonomyFromDB();
+    const hasMore = trimmed.length < events.length;
+    const total = events.length;
+
+    // Write slimmed data to sports_processed for edge endpoint
+    writeSlimCache(trimmed, hasMore, total, taxonomy).catch(() => {});
 
     return NextResponse.json(
-      { events: trimmed, hasMore: trimmed.length < events.length, total: events.length, ...(taxonomy ? { taxonomy } : {}) },
+      { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}) },
       { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' } }
     );
   } catch {
@@ -777,6 +754,34 @@ async function loadTokens(marketIds: string[]): Promise<Record<string, Token[]>>
     });
   }
   return tokensByMarket;
+}
+
+/** Write slimmed event data to api_cache for the edge endpoint */
+async function writeSlimCache(events: EventGroup[], hasMore: boolean, total: number, taxonomy?: TaxonomyItem[]) {
+  const slimEvents = events.map(e => ({
+    ...e,
+    description: null,
+    tags: e.tags?.slice(0, 3) || [],
+    markets: (e.markets || []).map(m => ({
+      id: m.id, condition_id: m.condition_id, question: m.question,
+      group_item_title: m.group_item_title, slug: m.slug,
+      description: null, category: m.category, tags: [],
+      image_url: null, resolution_source: null,
+      tokens: (m.tokens || []).map(t => ({
+        id: t.id, token_id: t.token_id, outcome: t.outcome, price: t.price,
+      })),
+      minimum_tick_size: m.minimum_tick_size, minimum_order_size: m.minimum_order_size,
+      active: m.active, closed: m.closed, resolved: m.resolved,
+      end_date_iso: m.end_date_iso, volume: m.volume,
+      liquidity: m.liquidity, neg_risk: m.neg_risk,
+    })),
+  }));
+  const slimData = { events: slimEvents, hasMore, total, ...(taxonomy ? { taxonomy } : {}) };
+  await pool.query(
+    `INSERT INTO api_cache (key, data, updated_at) VALUES ('sports_processed', $1::jsonb, NOW())
+     ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
+    [JSON.stringify(slimData)]
+  );
 }
 
 function buildMarketArray(eg: any, marketRows: any[], tokensByMarket: Record<string, Token[]>) {
