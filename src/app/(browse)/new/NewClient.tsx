@@ -1,18 +1,28 @@
 'use client';
 
-import { useRef } from 'react';
+import { useState, useRef } from 'react';
 import useSWR from 'swr';
 import MarketCard from '@/components/market/MarketCard';
 import { Market } from '@/lib/types';
 import { useLiveMarkets } from '@/hooks/useLivePrices';
 
 declare global {
-  interface Window { __NEW_PROMISE?: Promise<any>; }
+  interface Window { __NEW_PROMISE?: Promise<any>; __NEW_DATA?: any; }
 }
 
 export default function NewClient() {
   const prefetchUsed = useRef(false);
-  const { data: rawMarkets = [], isLoading } = useSWR<Market[]>(
+
+  const [initialData] = useState<Market[] | undefined>(() => {
+    if (typeof window !== 'undefined' && window.__NEW_DATA) {
+      const d = window.__NEW_DATA;
+      window.__NEW_DATA = undefined;
+      return Array.isArray(d) ? d : undefined;
+    }
+    return undefined;
+  });
+
+  const { data: rawMarkets = initialData || [], isLoading } = useSWR<Market[]>(
     '/api/polymarket/events?limit=100&order=newest',
     (url: string) => {
       if (!prefetchUsed.current && window.__NEW_PROMISE) {
@@ -23,7 +33,7 @@ export default function NewClient() {
       }
       return fetch(url).then(r => r.json());
     },
-    { refreshInterval: 30000 }
+    { refreshInterval: 30000, fallbackData: initialData }
   );
 
   const markets = useLiveMarkets(rawMarkets);

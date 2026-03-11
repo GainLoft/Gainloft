@@ -5,7 +5,7 @@ export default function BreakingPage() {
   return (
     <>
       <Script id="prefetch-breaking" strategy="beforeInteractive">{`
-        window.__BREAKING_PROMISE = fetch('/api/polymarket/breaking').then(function(r){return r.json()});
+        window.__BREAKING_PROMISE = fetch('/api/polymarket/breaking').then(function(r){return r.json()}).then(function(d){window.__BREAKING_DATA=d;return d});
       `}</Script>
       <BreakingClient />
     </>

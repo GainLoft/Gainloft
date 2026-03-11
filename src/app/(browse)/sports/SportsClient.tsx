@@ -538,7 +538,19 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     if (initialLoadRef.current) {
       initialLoadRef.current = false;
       if (viewTab === 'live' && !activeFilter && initialEvents.length > 0) return;
-      // Use pre-started fetch from <Script> if available (eliminates waterfall)
+      // Use already-resolved data if available (instant render, no skeleton)
+      if (viewTab === 'live' && !activeFilter && (window as any).__SPORTS_DATA) {
+        const data = (window as any).__SPORTS_DATA as PageResponse;
+        (window as any).__SPORTS_DATA = null;
+        (window as any).__SPORTS_PROMISE = null;
+        setEvents(data.events || []);
+        if (data.taxonomy) setTaxonomy(data.taxonomy);
+        setHasMore(data.hasMore ?? false);
+        setTotal(data.total ?? 0);
+        setIsLoading(false);
+        return;
+      }
+      // Fallback: use pre-started fetch promise
       if (viewTab === 'live' && !activeFilter && (window as any).__SPORTS_PROMISE) {
         setIsLoading(true);
         (window as any).__SPORTS_PROMISE

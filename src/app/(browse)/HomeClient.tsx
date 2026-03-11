@@ -9,7 +9,7 @@ import { CATEGORIES, getCategorySlug } from '@/lib/categories';
 import { useLiveMarkets } from '@/hooks/useLivePrices';
 
 declare global {
-  interface Window { __HOME_PROMISE?: Promise<any>; }
+  interface Window { __HOME_PROMISE?: Promise<any>; __HOME_DATA?: any; }
 }
 
 const swrFetcher = (url: string) => fetch(url).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
@@ -96,10 +96,20 @@ export default function HomeClient() {
   const eventsUrl = allMarketTag === 'All'
     ? '/api/polymarket/events?limit=50&order=volume24hr'
     : `/api/polymarket/events?limit=100&order=volume24hr&tag=${encodeURIComponent(getCategorySlug(allMarketTag))}`;
-  const { data: rawMarkets = [], isLoading } = useSWR<Market[]>(
+
+  // Use prefetched data as fallback (already resolved by the time React hydrates)
+  const [initialData] = useState<Market[] | undefined>(() => {
+    if (typeof window !== 'undefined' && window.__HOME_DATA) {
+      const d = window.__HOME_DATA;
+      window.__HOME_DATA = undefined;
+      return Array.isArray(d) ? d : undefined;
+    }
+    return undefined;
+  });
+
+  const { data: rawMarkets = initialData || [], isLoading } = useSWR<Market[]>(
     eventsUrl,
     (url: string) => {
-      // Use prefetched promise for initial default load
       if (!prefetchUsed.current && allMarketTag === 'All' && window.__HOME_PROMISE) {
         prefetchUsed.current = true;
         const p = window.__HOME_PROMISE;
@@ -108,7 +118,7 @@ export default function HomeClient() {
       }
       return fetch(url).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
     },
-    { refreshInterval: 30000 }
+    { refreshInterval: 30000, fallbackData: initialData }
   );
 
   // Merge live CLOB midpoint prices into all markets

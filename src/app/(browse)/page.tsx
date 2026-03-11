@@ -5,7 +5,7 @@ export default function HomePage() {
   return (
     <>
       <Script id="prefetch-home" strategy="beforeInteractive">{`
-        window.__HOME_PROMISE = fetch('/api/polymarket/events?limit=50&order=volume24hr').then(function(r){return r.json()});
+        window.__HOME_PROMISE = fetch('/api/polymarket/events?limit=50&order=volume24hr').then(function(r){return r.json()}).then(function(d){window.__HOME_DATA=d;return d});
       `}</Script>
       <HomeClient />
     </>

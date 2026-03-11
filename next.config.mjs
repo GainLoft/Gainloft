@@ -27,11 +27,11 @@ const nextConfig = {
       ],
     },
     {
-      // API responses: Cloudflare caches 30s, browser 5s
+      // API responses: Cloudflare caches 5 min, stale OK for 10 min
       source: '/api/polymarket/:path*',
       headers: [
-        { key: 'Cache-Control', value: 'public, max-age=5, s-maxage=30, stale-while-revalidate=60' },
-        { key: 'CDN-Cache-Control', value: 'max-age=30' },
+        { key: 'Cache-Control', value: 'public, max-age=10, s-maxage=300, stale-while-revalidate=600' },
+        { key: 'CDN-Cache-Control', value: 'max-age=300' },
       ],
     },
   ],

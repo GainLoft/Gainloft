@@ -5,7 +5,7 @@ import Link from 'next/link';
 import useSWR from 'swr';
 
 declare global {
-  interface Window { __BREAKING_PROMISE?: Promise<any>; }
+  interface Window { __BREAKING_PROMISE?: Promise<any>; __BREAKING_DATA?: any; }
 }
 
 const swrFetcher = (url: string) => fetch(url).then(r => r.json());
@@ -285,6 +285,15 @@ export default function BreakingClient() {
   const [activeCategory, setActiveCategory] = useState('all');
   const prefetchUsed = useRef(false);
 
+  const [initialData] = useState<{ markets: BreakingMarket[] } | undefined>(() => {
+    if (typeof window !== 'undefined' && window.__BREAKING_DATA) {
+      const d = window.__BREAKING_DATA;
+      window.__BREAKING_DATA = undefined;
+      return d;
+    }
+    return undefined;
+  });
+
   const apiUrl = activeCategory !== 'all'
     ? `/api/polymarket/breaking?category=${encodeURIComponent(activeCategory)}`
     : '/api/polymarket/breaking';
@@ -300,7 +309,7 @@ export default function BreakingClient() {
       }
       return fetch(url).then(r => r.json());
     },
-    { refreshInterval: 30000 },
+    { refreshInterval: 30000, fallbackData: initialData },
   );
 
   // Sidebar data
