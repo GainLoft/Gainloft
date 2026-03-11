@@ -3,25 +3,400 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #ffffff;
+  --bg-surface: #f5f5f5;
+  --bg-card: #ffffff;
+  --bg-hover: #fafafa;
+  --bg-input: #f5f5f5;
+  --text-primary: #0e0f11;
+  --text-secondary: #77808d;
+  --text-muted: #aeb4bc;
+  --text-icon: #c8ccd2;
+  --border: #e6e8ea;
+  --border-light: #f0f1f3;
+  --yes-green: #30a159;
+  --no-red: #e23939;
+  --brand-blue: #1452f0;
+  --gauge-track: #e6e8ea;
+  --dot-inactive: #d9dbdf;
+  --chart-grid: #f0f1f3;
+  --green-bg: rgba(48, 161, 89, 0.1);
+  --red-bg: rgba(233, 57, 57, 0.1);
+  --green-bg-hover: rgba(48, 161, 89, 0.2);
+  --red-bg-hover: rgba(233, 57, 57, 0.2);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.04);
+  --gradient-fade: linear-gradient(to left, #ffffff, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --bg: #131722;
+    --bg-surface: #1a1e2e;
+    --bg-card: #1e2230;
+    --bg-hover: #252a3a;
+    --bg-input: #1a1e2e;
+    --text-primary: #e1e3e8;
+    --text-secondary: #8b8fa3;
+    --text-muted: #5d6175;
+    --text-icon: #3d4156;
+    --border: #2d3142;
+    --border-light: #252a3a;
+    --yes-green: #3fbf6a;
+    --no-red: #f05454;
+    --brand-blue: #4d8af0;
+    --gauge-track: #2d3142;
+    --dot-inactive: #3d4156;
+    --chart-grid: #252a3a;
+    --green-bg: rgba(63, 191, 106, 0.15);
+    --red-bg: rgba(240, 84, 84, 0.15);
+    --green-bg-hover: rgba(63, 191, 106, 0.25);
+    --red-bg-hover: rgba(240, 84, 84, 0.25);
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.3);
+    --gradient-fade: linear-gradient(to left, #131722, transparent);
   }
 }
 
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-surface: #f5f5f5;
+  --bg-card: #ffffff;
+  --bg-hover: #fafafa;
+  --bg-input: #f5f5f5;
+  --text-primary: #0e0f11;
+  --text-secondary: #77808d;
+  --text-muted: #aeb4bc;
+  --text-icon: #c8ccd2;
+  --border: #e6e8ea;
+  --border-light: #f0f1f3;
+  --yes-green: #30a159;
+  --no-red: #e23939;
+  --brand-blue: #1452f0;
+  --gauge-track: #e6e8ea;
+  --dot-inactive: #d9dbdf;
+  --chart-grid: #f0f1f3;
+  --green-bg: rgba(48, 161, 89, 0.1);
+  --red-bg: rgba(233, 57, 57, 0.1);
+  --green-bg-hover: rgba(48, 161, 89, 0.2);
+  --red-bg-hover: rgba(233, 57, 57, 0.2);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.04);
+  --gradient-fade: linear-gradient(to left, #ffffff, transparent);
+}
+
+:root[data-theme="dark"] {
+  --bg: #131722;
+  --bg-surface: #1a1e2e;
+  --bg-card: #1e2230;
+  --bg-hover: #252a3a;
+  --bg-input: #1a1e2e;
+  --text-primary: #e1e3e8;
+  --text-secondary: #8b8fa3;
+  --text-muted: #5d6175;
+  --text-icon: #3d4156;
+  --border: #2d3142;
+  --border-light: #252a3a;
+  --yes-green: #3fbf6a;
+  --no-red: #f05454;
+  --brand-blue: #4d8af0;
+  --gauge-track: #2d3142;
+  --dot-inactive: #3d4156;
+  --chart-grid: #252a3a;
+  --green-bg: rgba(63, 191, 106, 0.15);
+  --red-bg: rgba(240, 84, 84, 0.15);
+  --green-bg-hover: rgba(63, 191, 106, 0.25);
+  --red-bg-hover: rgba(240, 84, 84, 0.25);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.3);
+  --gradient-fade: linear-gradient(to left, #131722, transparent);
+}
+
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text-primary);
+  background: var(--bg);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ── Top loader bar ── */
+@keyframes toploader-progress {
+  0%   { width: 0; }
+  20%  { width: 30%; }
+  50%  { width: 60%; }
+  80%  { width: 80%; }
+  100% { width: 85%; }
+}
+
+@keyframes toploader-finish {
+  0%   { width: 85%; opacity: 1; }
+  50%  { width: 100%; opacity: 1; }
+  100% { width: 100%; opacity: 0; }
+}
+
+.toploader-bar {
+  animation: toploader-progress 4s cubic-bezier(0.2, 0.5, 0.3, 1) forwards;
+}
+
+.toploader-done {
+  animation: toploader-finish 0.35s ease forwards;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.live-pulse {
+  animation: pulse-live 1.5s ease-in-out infinite;
+}
+
+/* Scrolling number animation */
+@keyframes scroll-up-out { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-100%); opacity: 0; } }
+@keyframes scroll-up-in { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes scroll-down-out { from { transform: translateY(0); opacity: 1; } to { transform: translateY(100%); opacity: 0; } }
+@keyframes scroll-down-in { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.scroll-up-out { animation: scroll-up-out 0.3s ease-in-out forwards; }
+.scroll-up-in { animation: scroll-up-in 0.3s ease-in-out forwards; }
+.scroll-down-out { animation: scroll-down-out 0.3s ease-in-out forwards; }
+.scroll-down-in { animation: scroll-down-in 0.3s ease-in-out forwards; }
+
+/* ── Global interactive styles ── */
+
+button, a, [role="button"] {
+  cursor: pointer;
+}
+
+/* Card hover — Polymarket style: background tint */
+.card-hover {
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.card-hover:hover {
+  background: var(--bg-hover) !important;
+  border-color: var(--text-muted) !important;
+}
+
+/* Row hover — background tint */
+.row-hover {
+  transition: background 0.15s ease;
+}
+.row-hover:hover {
+  background: var(--bg-hover) !important;
+}
+
+/* Pill hover — blue fill */
+.pill-hover {
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.pill-hover:hover {
+  background: var(--brand-blue) !important;
+  color: #fff !important;
+  border-color: var(--brand-blue) !important;
+}
+
+/* Trade button hover — deepens base color */
+.btn-yes-hover {
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.btn-yes-hover:hover {
+  background: var(--green-bg-hover) !important;
+}
+.btn-no-hover {
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.btn-no-hover:hover {
+  background: var(--red-bg-hover) !important;
+}
+
+/* Icon button hover */
+.icon-hover {
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.icon-hover:hover {
+  background: var(--bg-surface) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Sports page hover effects */
+.sports-btn:hover {
+  background: var(--bg-hover) !important;
+  border-color: var(--text-muted) !important;
+}
+
+.sports-btn:active {
+  transform: scale(0.97);
+}
+
+.sports-card:hover {
+  background: var(--bg-surface) !important;
+}
+
+.sports-game-view:hover span:last-child {
+  text-decoration: underline;
+}
+
+/* Elections page */
+.elections-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 1024px) {
+  .elections-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .elections-grid { grid-template-columns: 1fr; }
+}
+
+.election-card {
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.election-card:hover {
+  background: var(--bg-hover) !important;
+  border-color: var(--text-muted) !important;
+}
+
+.election-sidebar-btn {
+  transition: background 0.15s, color 0.15s;
+}
+
+.election-sidebar-btn:hover {
+  background: var(--brand-blue) !important;
+  color: #fff !important;
+}
+
+/* Futures page */
+.futures-card {
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.futures-card:hover {
+  border-color: var(--text-muted) !important;
+}
+
+.futures-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.futures-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .futures-grid-3 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .futures-grid-3 { grid-template-columns: 1fr; }
+  .futures-grid-2 { grid-template-columns: 1fr; }
+}
+
+/* Finance page */
+.finance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 1024px) {
+  .finance-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .finance-grid { grid-template-columns: 1fr; }
+}
+
+.finance-card {
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.finance-card:hover {
+  border-color: var(--text-muted) !important;
+}
+
+.finance-sidebar-btn {
+  transition: background 0.15s, color 0.15s;
+}
+
+.finance-sidebar-btn:hover {
+  background: var(--brand-blue) !important;
+  color: #fff !important;
+}
+
+/* ── Marquee text scroll on hover ── */
+@keyframes marquee-scroll {
+  0%   { transform: translateX(0); }
+  10%  { transform: translateX(0); }
+  90%  { transform: translateX(var(--marquee-dist)); }
+  100% { transform: translateX(var(--marquee-dist)); }
+}
+
+.marquee-wrap {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  position: relative;
+}
+
+.marquee-wrap .marquee-inner {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.marquee-wrap:hover .marquee-inner.is-overflowing {
+  animation: marquee-scroll 3s ease-in-out infinite;
+}
+
+/* ── Left sidebar ── */
+.left-sidebar {
+  display: none;
+}
+
+.browse-content {
+  padding-left: 0 !important;
+}
+
+@media (min-width: 1024px) {
+  .left-sidebar {
+    display: block;
+  }
+  .browse-content {
+    padding-left: 24px !important;
+  }
+}
+
+.sidebar-nav-item:hover {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ── Breaking page responsive ── */
+.breaking-sidebar {
+  display: none;
+}
+
+.breaking-sparkline {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .breaking-sparkline {
+    display: block;
+  }
+}
+
+@media (min-width: 1024px) {
+  .breaking-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
   }
 }
