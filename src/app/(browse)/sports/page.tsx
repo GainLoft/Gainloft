@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { EventGroup } from '@/lib/types';
 import TradePanel from '@/components/trade/TradePanel';
 import OutcomeDropdown from '@/components/trade/OutcomeDropdown';
+import { useLivePrices, extractTokenIds } from '@/hooks/useLivePrices';
 
 /* ── Types ── */
 
@@ -100,22 +101,39 @@ function MatchSkeleton() {
 
 /* ── Match Card ── */
 function MatchCard({
-  event, isSelected, onSelect, onOutcomeClick,
+  event, isSelected, onSelect, onOutcomeClick, livePrices,
 }: {
   event: EventGroup;
   isSelected: boolean;
   onSelect: () => void;
   onOutcomeClick: (marketTypeLabel: string, outcomeIdx: number, marketId?: string) => void;
+  livePrices?: Record<string, { mid: number }>;
 }) {
   const m = event.match!;
   const t1 = m.team1;
   const t2 = m.team2;
 
   const ml = m.market_types.find((mt) => mt.label === 'Moneyline' || mt.label === 'Winner' || mt.label === 'Match Winner') ?? m.market_types[0];
-  const t1Price = ml?.markets[0]?.price ?? 0;
-  const t2Price = ml?.markets[1]?.price ?? 0;
+
+  // Use live CLOB prices if available, otherwise fall back to stored prices
+  const getLivePrice = (marketTypeMarket: { id?: string; price: number }, fallback: number): number => {
+    if (!livePrices || !marketTypeMarket?.id) return fallback;
+    // The market_type market id maps to a market in the event; find the Yes token
+    const baseId = marketTypeMarket.id.replace(/-\d+$/, '');
+    const mkt = event.markets.find(m => m.id === baseId);
+    if (mkt) {
+      const yesToken = mkt.tokens.find(t => t.outcome === 'Yes');
+      if (yesToken && livePrices[yesToken.token_id]) {
+        return livePrices[yesToken.token_id].mid;
+      }
+    }
+    return fallback;
+  };
+
+  const t1Price = getLivePrice(ml?.markets[0], ml?.markets[0]?.price ?? 0);
+  const t2Price = 1 - t1Price; // No price is complement of Yes
   const is3Way = ml && ml.markets.length >= 3;
-  const drawPrice = is3Way ? ml.markets[2]?.price ?? 0 : 0;
+  const drawPrice = is3Way ? getLivePrice(ml.markets[2], ml.markets[2]?.price ?? 0) : 0;
 
   // Find spread and O/U for additional rows (pick first of each type, skip settled)
   const isActive = (mt: typeof m.market_types[0]) => {
@@ -529,17 +547,15 @@ export default function SportsPage() {
     return () => observer.disconnect();
   }, [hasMore, events.length, fetchPage]);
 
-  /* ── Auto-refresh current page every 30s ── */
+  /* ── Auto-refresh event list every 60s (structure only, prices via live polling) ── */
   useEffect(() => {
     const interval = setInterval(() => {
       if (!fetchingRef.current && events.length > 0) {
-        // Silently refetch the first page to update prices
         const controller = new AbortController();
         fetch(buildUrl(0), { signal: controller.signal })
           .then(r => r.json())
           .then((data: PageResponse) => {
             if (data.taxonomy) setTaxonomy(data.taxonomy);
-            // Merge: replace existing events that match by id, keep the rest
             setEvents(prev => {
               const newMap = new Map(data.events.map(e => [e.id, e]));
               return prev.map(e => newMap.get(e.id) || e);
@@ -547,9 +563,13 @@ export default function SportsPage() {
           })
           .catch(() => {});
       }
-    }, 30000);
+    }, 60000);
     return () => clearInterval(interval);
   }, [buildUrl, events.length]);
+
+  /* ── Live price polling (1s) ── */
+  const allTokenIds = useMemo(() => extractTokenIds(events), [events]);
+  const livePrices = useLivePrices(allTokenIds, 1000);
 
   /* ── Client-side sort & filter ── */
   const displayEvents = useMemo(() => {
@@ -873,6 +893,7 @@ export default function SportsPage() {
                           isSelected={sel?.id === event.id}
                           onSelect={() => handleSelectEvent(event)}
                           onOutcomeClick={(marketLabel, idx, mId) => handleOutcomeClick(event, marketLabel, idx, mId)}
+                          livePrices={livePrices}
                         />
                       ))}
                     </div>

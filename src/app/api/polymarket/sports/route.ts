@@ -13,14 +13,13 @@ export const preferredRegion = 'sin1';
  * GET /api/polymarket/sports?tab=live|futures&offset=0&limit=30&sport=&league=
  *
  * Paginated sports data.
- *   tab=live  → fetches DIRECTLY from Polymarket Gamma API for real-time data
+ *   tab=live  → match events from local DB (synced by background cron)
  *   tab=futures → outrights / season bets from local DB
  *
  * Returns: { events: EventGroup[], hasMore: boolean, total: number, taxonomy?: TaxonomyItem[] }
  * taxonomy is only included when offset=0
  */
 
-const GAMMA_API = 'https://gamma-api.polymarket.com';
 const PAGE_SIZE_DEFAULT = 30;
 const PAGE_SIZE_MAX = 100;
 
@@ -66,7 +65,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ═══════════════════════════════════════════════════
-//  MATCHES (tab=live) — fetches directly from Polymarket Gamma API
+//  MATCHES (tab=live) — reads from local DB (synced by background cron)
 // ═══════════════════════════════════════════════════
 
 /** Parse a value that might be a JSON string or already an array */
@@ -143,91 +142,113 @@ function isPlaceholderMarket(pm: PMMarket): boolean {
 }
 
 async function handleMatches(offset: number, limit: number, sportFilter: string, leagueFilter: string) {
-  // Determine which Polymarket tags to fetch
-  const tags: string[] = [];
-  if (leagueFilter) {
-    tags.push(leagueFilter);
-  } else if (sportFilter) {
-    tags.push(sportFilter);
-  } else {
-    tags.push('sports', 'esports');
-  }
+  // Build tag filter conditions (same pattern as handleFutures)
+  const SPORT_ROOT_CONDITION_EG = `(${[
+    'sports', 'esports', ...Object.keys(PARENT_SPORTS),
+  ].map(s => `eg.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ')})`;
 
-  // Fetch from Gamma API — 24h window to include live matches with past endDates
-  const windowStart = new Date(Date.now() - 24 * 3600_000).toISOString();
+  const SPORT_ROOT_CONDITION_M = `(${[
+    'sports', 'esports', ...Object.keys(PARENT_SPORTS),
+  ].map(s => `m.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ')})`;
 
-  const fetchByTag = async (tag: string): Promise<PMEvent[]> => {
-    const allEvents: PMEvent[] = [];
-    const pageSize = 100;
-    // Fetch 3 pages (300 events) per tag — covers top matches by volume
-    // Deep coverage is handled by the background sync
-    const maxPages = 3;
-    const fetches: Promise<PMEvent[]>[] = [];
-    for (let page = 0; page < maxPages; page++) {
-      const sp = new URLSearchParams({
-        tag_slug: tag,
-        active: 'true',
-        closed: 'false',
-        limit: String(pageSize),
-        offset: String(page * pageSize),
-        order: 'volume24hr',
-        ascending: 'false',
-        end_date_min: windowStart,
-      });
-      fetches.push(
-        fetch(`${GAMMA_API}/events?${sp}`, {
-          cache: 'no-store',
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-        }).then(r => r.ok ? r.json() : []).catch(() => [] as PMEvent[])
-      );
-    }
-    const pages = await Promise.all(fetches);
-    for (const events of pages) {
-      allEvents.push(...events);
-    }
-    return allEvents;
-  };
+  const egTagConditions: string[] = [SPORT_ROOT_CONDITION_EG];
+  const mTagConditions: string[] = [SPORT_ROOT_CONDITION_M];
+  const tagParams: any[] = [];
+  let paramIdx = 1;
 
-  const batches = await Promise.all(tags.map(fetchByTag));
-
-  // Deduplicate by event ID
-  const seen = new Set<string>();
-  const allEvents: PMEvent[] = [];
-  for (const batch of batches) {
-    for (const ev of batch) {
-      if (!seen.has(ev.id)) { seen.add(ev.id); allEvents.push(ev); }
-    }
-  }
-
-  // Filter: must have "vs", must not be settled (Match Winner decided)
-  let filtered = allEvents.filter(ev => {
-    if (!/vs\.?/i.test(ev.title)) return false;
-    if (!ev.markets?.length) return false;
-    if (isMatchSettled(ev)) return false;
-    return true;
-  });
-
-  // Apply additional sport/league tag filter
-  if (sportFilter && !leagueFilter) {
-    filtered = filtered.filter(ev => ev.tags?.some(t => t.slug === sportFilter));
+  if (sportFilter) {
+    egTagConditions.push(`eg.tags @> $${paramIdx}::jsonb`);
+    mTagConditions.push(`m.tags @> $${paramIdx}::jsonb`);
+    tagParams.push(JSON.stringify([{ slug: sportFilter }]));
+    paramIdx++;
   }
   if (leagueFilter) {
-    filtered = filtered.filter(ev => ev.tags?.some(t => t.slug === leagueFilter));
+    egTagConditions.push(`eg.tags @> $${paramIdx}::jsonb`);
+    mTagConditions.push(`m.tags @> $${paramIdx}::jsonb`);
+    tagParams.push(JSON.stringify([{ slug: leagueFilter }]));
+    paramIdx++;
   }
 
-  // No re-sorting — preserve the exact order Polymarket's Gamma API returns.
+  const egTagWhere = egTagConditions.join(' AND ');
+  const mTagWhere = mTagConditions.join(' AND ');
 
-  // Convert to EventGroup with match info
+  // 1. Query event_groups with "vs" in title (matches)
+  const { rows: egRows } = await pool.query(
+    `SELECT eg.id, eg.title, eg.slug, eg.description, eg.category, eg.tags,
+       eg.image_url, eg.end_date_iso, eg.volume, eg.volume_24hr, eg.liquidity,
+       eg.neg_risk, eg.created_at, eg.polymarket_id
+     FROM event_groups eg
+     WHERE eg.polymarket_id IS NOT NULL
+       AND ${egTagWhere}
+       AND eg.title ~* 'vs\\.?'
+       AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
+     ORDER BY eg.volume DESC
+     LIMIT 300`,
+    tagParams
+  );
+
+  // 2. Query standalone markets (no event_group) with "vs" in title
+  const { rows: standaloneRows } = await pool.query(
+    `SELECT m.id, m.question, m.slug, m.category, m.tags,
+       m.image_url, m.end_date_iso, m.volume, m.volume_24hr, m.liquidity,
+       m.neg_risk, m.created_at, m.active, m.closed, m.polymarket_id,
+       m.condition_id, m.minimum_tick_size, m.minimum_order_size
+     FROM markets m
+     WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
+       AND ${mTagWhere}
+       AND m.question ~* 'vs\\.?'
+       AND m.closed = false
+     ORDER BY m.volume DESC
+     LIMIT 100`,
+    tagParams
+  );
+
+  // 3. Load sub-markets for event_groups
+  const groupIds = egRows.map((r: any) => r.id);
+  const allSubMarkets: Record<string, any[]> = {};
+
+  if (groupIds.length > 0) {
+    const { rows: subRows } = await pool.query(
+      `SELECT m.id, m.event_group_id, m.question, m.group_item_title, m.slug,
+         m.image_url, m.end_date_iso, m.volume, m.liquidity,
+         m.active, m.closed, m.condition_id, m.minimum_tick_size, m.minimum_order_size,
+         m.polymarket_id, m.created_at, m.description
+       FROM markets m WHERE m.event_group_id = ANY($1) AND m.closed = false
+       ORDER BY m.created_at`,
+      [groupIds]
+    );
+    for (const r of subRows) {
+      if (!allSubMarkets[r.event_group_id]) allSubMarkets[r.event_group_id] = [];
+      allSubMarkets[r.event_group_id].push(r);
+    }
+  }
+
+  // 4. Load tokens for all market IDs
+  const allMarketIds = [
+    ...Object.values(allSubMarkets).flat().map(m => m.id),
+    ...standaloneRows.map((r: any) => r.id),
+  ];
+  const tokensByMarket = await loadTokens(allMarketIds);
+
+  // 5. Convert event_groups to PMEvent, filter, and build EventGroups
   const rawEvents: EventGroup[] = [];
-  for (const ev of filtered) {
-    const matchInfo = buildMatchInfo(ev);
+
+  for (const eg of egRows) {
+    const marketRows = allSubMarkets[eg.id] || [];
+    if (marketRows.length === 0) continue;
+
+    const pmEvent = toPMEvent(eg, marketRows, tokensByMarket);
+
+    // Filter out settled matches
+    if (isMatchSettled(pmEvent)) continue;
+
+    const matchInfo = buildMatchInfo(pmEvent);
     if (!matchInfo) continue;
 
-    // Convert sub-markets to our Market format for trade panel
-    // Ensure moneyline is always first, then fill with other markets
-    const nonPlaceholder = ev.markets.filter(m => !isPlaceholderMarket(m));
+    // Convert sub-markets: moneyline first, then others
+    const nonPlaceholder = pmEvent.markets.filter(m => !isPlaceholderMarket(m));
     const moneyline = nonPlaceholder.find(m =>
-      !m.groupItemTitle && m.question === ev.title
+      !m.groupItemTitle && m.question === pmEvent.title
     ) || nonPlaceholder.find(m =>
       m.groupItemTitle === 'Match Winner' || m.question === 'Match Winner'
     ) || nonPlaceholder.find(m =>
@@ -235,33 +256,56 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
     );
     const others = nonPlaceholder.filter(m => m !== moneyline).slice(0, moneyline ? 2 : 3);
     const orderedMarkets = moneyline ? [moneyline, ...others] : others;
-    const mappedMarkets = orderedMarkets.map(m => mapToMarket(ev, m));
+    const mappedMarkets = orderedMarkets.map(m => mapToMarket(pmEvent, m));
 
     rawEvents.push({
-      id: ev.id,
-      title: ev.title,
-      slug: ev.slug,
-      description: ev.description || null,
-      category: ev.tags?.[0]?.label || 'Sports',
-      tags: ev.tags?.map(t => ({ slug: t.slug, label: t.label })) || [],
-      image_url: ev.image || null,
-      end_date_iso: ev.endDate || null,
-      volume: ev.volume || 0,
-      liquidity: ev.liquidity || 0,
-      created_at: ev.createdAt || ev.creationDate || new Date().toISOString(),
+      id: pmEvent.id,
+      title: pmEvent.title,
+      slug: pmEvent.slug,
+      description: pmEvent.description || null,
+      category: pmEvent.tags?.[0]?.label || 'Sports',
+      tags: pmEvent.tags?.map(t => ({ slug: t.slug, label: t.label })) || [],
+      image_url: pmEvent.image || null,
+      end_date_iso: pmEvent.endDate || null,
+      volume: pmEvent.volume || 0,
+      liquidity: pmEvent.liquidity || 0,
+      created_at: pmEvent.createdAt || pmEvent.creationDate || new Date().toISOString(),
       markets: mappedMarkets,
       match: matchInfo,
     });
   }
 
-  // Merge event_groups for the same physical match (base + "-more-markets" etc.)
+  // 6. Add standalone matches
+  for (const m of standaloneRows) {
+    const tokens = tokensByMarket[m.id] || [];
+    const matchInfo = buildStandaloneMatch(m, tokens);
+    if (!matchInfo) continue;
+
+    rawEvents.push({
+      id: m.id,
+      title: m.question,
+      slug: m.slug,
+      description: null,
+      category: m.category || 'Sports',
+      tags: (m.tags || []).map((t: any) => ({ slug: t.slug, label: t.label })),
+      image_url: m.image_url || null,
+      end_date_iso: m.end_date_iso || null,
+      volume: parseFloat(m.volume) || 0,
+      liquidity: parseFloat(m.liquidity) || 0,
+      created_at: m.created_at,
+      markets: [buildSingleMarket(m, tokens)],
+      match: matchInfo,
+    });
+  }
+
+  // 7. Merge event_groups for the same physical match
   const events = mergeMatchEvents(rawEvents);
 
   const total = events.length;
   const trimmed = events.slice(offset, offset + limit);
   const hasMore = offset + trimmed.length < total;
 
-  // Build taxonomy only on first page (still from DB — comprehensive)
+  // Build taxonomy only on first page
   let taxonomy: TaxonomyItem[] | undefined;
   if (offset === 0) {
     taxonomy = await buildTaxonomyFromDB();
@@ -269,7 +313,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
 
   return NextResponse.json(
     { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}) },
-    { headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=20' } }
+    { headers: { 'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=10' } }
   );
 }
 
@@ -659,7 +703,7 @@ function toPMEvent(eg: any, marketRows: any[], tokensByMarket: Record<string, To
         outcomes: [yesToken?.label || 'Yes', noToken?.label || 'No'],
         outcomePrices: [String(yesToken?.price ?? 0.5), String(noToken?.price ?? 0.5)],
         volume: String(m.volume || 0), active: m.active, closed: m.closed,
-        clobTokenIds: [], groupItemTitle: m.group_item_title || '',
+        clobTokenIds: tokens.map(t => t.token_id), groupItemTitle: m.group_item_title || '',
         liquidity: String(m.liquidity || 0),
         orderPriceMinTickSize: parseFloat(m.minimum_tick_size) || 0.01,
         orderMinSize: parseFloat(m.minimum_order_size) || 5,
