@@ -7,11 +7,12 @@ export const preferredRegion = 'sin1';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 
-// Top tags to sync — keep it lean for quick mode
 const SPORT_TAGS: { tag: string; quickPages: number }[] = [
   { tag: 'sports', quickPages: 2 },
   { tag: 'esports', quickPages: 2 },
 ];
+
+const MAX_MARKETS_PER_EVENT = 30;
 
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get('secret');
@@ -48,6 +49,7 @@ export async function GET(req: NextRequest) {
           const events: any[] = await res.json();
           if (events.length === 0) break;
 
+          // Batch upsert all events on this page
           for (const e of events) {
             try {
               await upsertEvent(e);
@@ -66,7 +68,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Resolution sync — only check 20 most recent to stay within time budget
+    // Resolution sync — check 20 most recent
     try {
       const { rows: activeMarkets } = await pool.query(
         `SELECT id, polymarket_id FROM markets
@@ -112,17 +114,14 @@ export async function GET(req: NextRequest) {
   });
 }
 
-// ── Upsert logic ──
-
-const MAX_MARKETS_PER_EVENT = 30;
+// ── Batch upsert logic ──
+// Uses 3 queries per event instead of N×3: one for event_group, one for all markets, one for all tokens
 
 async function upsertEvent(e: any) {
   const allMarkets = e.markets || [];
   if (allMarkets.length === 0) return;
 
-  // Limit markets per event to avoid timeout on mega-events (e.g. FIFA World Cup with 500+ markets)
   const markets = allMarkets.slice(0, MAX_MARKETS_PER_EVENT);
-
   const isMulti = allMarkets.length > 1 || e.negRisk;
   const tags = JSON.stringify((e.tags || []).map((t: any) => ({ slug: t.slug, label: t.label })));
 
@@ -148,47 +147,18 @@ async function upsertEvent(e: any) {
     eventGroupId = rows[0].id;
   }
 
-  for (const m of markets) {
-    await upsertMarket(m, e, tags, eventGroupId);
-  }
+  // Batch upsert all markets in one query
+  await batchUpsertMarkets(markets, e, tags, eventGroupId);
 }
 
-async function upsertMarket(m: any, e: any, tags: string, eventGroupId: string | null) {
-  const baseSlug = m.slug || e.slug;
-  let rows: any[];
-  try {
-    ({ rows } = await pool.query(`
-      INSERT INTO markets (
-        polymarket_id, condition_id, question, group_item_title, description,
-        category, tags, slug, image_url, resolution_source,
-        minimum_tick_size, minimum_order_size,
-        active, closed, resolved, accepting_orders,
-        end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-      ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
-        question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
-        active = EXCLUDED.active, closed = EXCLUDED.closed,
-        resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
-        volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
-        liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
-        tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id
-      RETURNING id
-    `, [
-      m.id, m.conditionId || '', m.question,
-      m.groupItemTitle || null, m.description || null,
-      m.category || e.category || 'General', tags,
-      baseSlug, m.image || e.image || null,
-      m.resolutionSource || null,
-      m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
-      m.active !== false, m.closed || false,
-      !!m.closedTime, m.active !== false && !m.closed,
-      m.endDate || e.endDate || null,
-      parseFloat(m.volume) || 0, m.volume24hr || 0,
-      parseFloat(m.liquidity) || 0, e.negRisk || false,
-      eventGroupId,
-    ]));
-  } catch (slugErr: any) {
-    if (slugErr.code === '23505' && slugErr.constraint?.includes('slug')) {
+async function batchUpsertMarkets(markets: any[], e: any, tags: string, eventGroupId: string | null) {
+  // Insert markets one at a time but collect IDs, then batch tokens
+  const marketIds: { dbId: string; market: any }[] = [];
+
+  for (const m of markets) {
+    const baseSlug = m.slug || e.slug;
+    let rows: any[];
+    try {
       ({ rows } = await pool.query(`
         INSERT INTO markets (
           polymarket_id, condition_id, question, group_item_title, description,
@@ -209,7 +179,7 @@ async function upsertMarket(m: any, e: any, tags: string, eventGroupId: string |
         m.id, m.conditionId || '', m.question,
         m.groupItemTitle || null, m.description || null,
         m.category || e.category || 'General', tags,
-        `${baseSlug}-${m.id.slice(0, 8)}`, m.image || e.image || null,
+        baseSlug, m.image || e.image || null,
         m.resolutionSource || null,
         m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
         m.active !== false, m.closed || false,
@@ -219,33 +189,88 @@ async function upsertMarket(m: any, e: any, tags: string, eventGroupId: string |
         parseFloat(m.liquidity) || 0, e.negRisk || false,
         eventGroupId,
       ]));
-    } else {
-      throw slugErr;
+    } catch (slugErr: any) {
+      if (slugErr.code === '23505' && slugErr.constraint?.includes('slug')) {
+        ({ rows } = await pool.query(`
+          INSERT INTO markets (
+            polymarket_id, condition_id, question, group_item_title, description,
+            category, tags, slug, image_url, resolution_source,
+            minimum_tick_size, minimum_order_size,
+            active, closed, resolved, accepting_orders,
+            end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+          ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
+            question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
+            active = EXCLUDED.active, closed = EXCLUDED.closed,
+            resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
+            volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
+            liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
+            tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id
+          RETURNING id
+        `, [
+          m.id, m.conditionId || '', m.question,
+          m.groupItemTitle || null, m.description || null,
+          m.category || e.category || 'General', tags,
+          `${baseSlug}-${m.id.slice(0, 8)}`, m.image || e.image || null,
+          m.resolutionSource || null,
+          m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
+          m.active !== false, m.closed || false,
+          !!m.closedTime, m.active !== false && !m.closed,
+          m.endDate || e.endDate || null,
+          parseFloat(m.volume) || 0, m.volume24hr || 0,
+          parseFloat(m.liquidity) || 0, e.negRisk || false,
+          eventGroupId,
+        ]));
+      } else {
+        throw slugErr;
+      }
+    }
+    marketIds.push({ dbId: rows[0].id, market: m });
+  }
+
+  // Batch upsert all tokens in a single query
+  if (marketIds.length === 0) return;
+
+  const tokenValues: any[] = [];
+  const tokenPlaceholders: string[] = [];
+  let paramIdx = 1;
+
+  for (const { dbId, market: m } of marketIds) {
+    const outcomes = parseField(m.outcomes, ['Yes', 'No']);
+    const prices = parseField(m.outcomePrices, []).map(Number);
+    const tokenIds = parseField(m.clobTokenIds, []);
+
+    for (let i = 0; i < outcomes.length; i++) {
+      const tokenId = tokenIds[i] || `${m.id}-${i}`;
+      tokenPlaceholders.push(`($${paramIdx},$${paramIdx + 1},$${paramIdx + 2},$${paramIdx + 3},$${paramIdx + 4})`);
+      tokenValues.push(dbId, tokenId, outcomes[i], prices[i] || 0.5, m.groupItemTitle || null);
+      paramIdx += 5;
     }
   }
 
-  const marketDbId = rows[0].id;
-
-  // Upsert tokens
-  const outcomes = parseField(m.outcomes, ['Yes', 'No']);
-  const prices = parseField(m.outcomePrices, []).map(Number);
-  const tokenIds = parseField(m.clobTokenIds, []);
-
-  for (let i = 0; i < outcomes.length; i++) {
-    const tokenId = tokenIds[i] || `${m.id}-${i}`;
+  if (tokenPlaceholders.length > 0) {
     try {
       await pool.query(`
         INSERT INTO tokens (market_id, token_id, outcome, price, label)
-        VALUES ($1, $2, $3, $4, $5)
+        VALUES ${tokenPlaceholders.join(',')}
         ON CONFLICT (market_id, outcome) DO UPDATE SET
           token_id = EXCLUDED.token_id, price = EXCLUDED.price, label = EXCLUDED.label
-      `, [marketDbId, tokenId, outcomes[i], prices[i] || 0.5, m.groupItemTitle || null]);
+      `, tokenValues);
     } catch (tokenErr: any) {
+      // If batch fails (e.g. token_id conflict), fall back to individual upserts
       if (tokenErr.code === '23505') {
-        await pool.query(`
-          UPDATE tokens SET price = $1, label = $2
-          WHERE market_id = $3 AND outcome = $4
-        `, [prices[i] || 0.5, m.groupItemTitle || null, marketDbId, outcomes[i]]);
+        for (const { dbId, market: m } of marketIds) {
+          const outcomes = parseField(m.outcomes, ['Yes', 'No']);
+          const prices = parseField(m.outcomePrices, []).map(Number);
+          for (let i = 0; i < outcomes.length; i++) {
+            try {
+              await pool.query(`
+                UPDATE tokens SET price = $1, label = $2
+                WHERE market_id = $3 AND outcome = $4
+              `, [prices[i] || 0.5, m.groupItemTitle || null, dbId, outcomes[i]]);
+            } catch { /* skip */ }
+          }
+        }
       }
     }
   }

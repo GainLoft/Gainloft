@@ -4,38 +4,28 @@ import pool from '@/lib/db';
 export const maxDuration = 300; // 5 min for Pro plan
 export const preferredRegion = 'sin1';
 
-// GET = DB test + mini sync (3 events)
+// GET = quick DB test
 export async function GET() {
-  const log: string[] = [];
-  const t0 = Date.now();
   try {
-    // 1. DB read test
+    const t0 = Date.now();
     const { rows } = await pool.query('SELECT NOW() as time, current_database() as db');
-    log.push(`read: ${Date.now() - t0}ms`);
+    const readMs = Date.now() - t0;
 
-    // 2. Fetch 3 events from Polymarket
     const t1 = Date.now();
-    const sp = new URLSearchParams({ tag_slug: 'sports', limit: '3', order: 'volume24hr', ascending: 'false', active: 'true' });
-    const res = await fetch(`${GAMMA_API}/events?${sp}`, { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } });
-    const events: any[] = await res.json();
-    log.push(`fetch: ${Date.now() - t1}ms, events: ${events.length}`);
+    const { rows: writeTest } = await pool.query(
+      `INSERT INTO event_groups (polymarket_id, title, slug, category)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET title = EXCLUDED.title
+       RETURNING id`,
+      ['test-123', 'DB Write Test', 'db-write-test', 'Test']
+    );
+    const writeMs = Date.now() - t1;
 
-    // 3. Try upserting each event
-    let synced = 0;
-    for (const e of events) {
-      const te = Date.now();
-      try {
-        await upsertEvent(e);
-        synced++;
-        log.push(`upsert ${e.slug}: ${Date.now() - te}ms`);
-      } catch (err) {
-        log.push(`error ${e.slug}: ${(err as Error).message} (${Date.now() - te}ms)`);
-      }
-    }
+    await pool.query(`DELETE FROM event_groups WHERE polymarket_id = 'test-123'`);
 
-    return NextResponse.json({ ok: true, synced, total: `${Date.now() - t0}ms`, log });
+    return NextResponse.json({ ok: true, ...rows[0], readMs, writeMs, writeId: writeTest[0]?.id });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: (err as Error).message, total: `${Date.now() - t0}ms`, log }, { status: 500 });
+    return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 });
   }
 }
 
