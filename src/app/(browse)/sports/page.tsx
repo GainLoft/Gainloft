@@ -1,8 +1,9 @@
 import SportsClient from './SportsClient';
 
-export const dynamic = 'force-dynamic';
+// ISR: pre-render page, serve from edge CDN (~20ms), revalidate every 30s
+export const revalidate = 30;
 
-async function fetchInitialData() {
+async function getInitialData() {
   const base = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : 'http://localhost:3000';
@@ -11,15 +12,14 @@ async function fetchInitialData() {
     const res = await fetch(`${base}/api/polymarket/sports?tab=live&offset=0&limit=30`, {
       next: { revalidate: 30 },
     });
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
+    if (res.ok) return res.json();
+  } catch {}
+
+  return null;
 }
 
 export default async function SportsPage() {
-  const data = await fetchInitialData();
+  const data = await getInitialData();
 
   return (
     <SportsClient
