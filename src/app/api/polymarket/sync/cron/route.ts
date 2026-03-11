@@ -93,6 +93,85 @@ export async function GET(req: NextRequest) {
         } catch { /* skip */ }
       }
     } catch { /* skip */ }
+
+    // Precompute sports cache
+    try {
+      await pool.query(`CREATE TABLE IF NOT EXISTS api_cache (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
+
+      const SPORT_TAGS_LIST = ['sports', 'esports', 'basketball', 'soccer', 'tennis', 'hockey', 'cricket', 'baseball', 'football', 'rugby', 'ufc', 'boxing', 'golf', 'f1', 'chess', 'table-tennis', 'pickleball', 'lacrosse'];
+      const rootCond = SPORT_TAGS_LIST.map(s => `eg.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
+      const rootCondM = SPORT_TAGS_LIST.map(s => `m.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
+
+      // Get event groups and standalone markets in parallel
+      const [egResult, standaloneResult] = await Promise.all([
+        pool.query(`
+          SELECT eg.id, eg.title, eg.slug, eg.description, eg.category, eg.tags,
+            eg.image_url, eg.end_date_iso, eg.volume, eg.volume_24hr, eg.liquidity,
+            eg.neg_risk, eg.created_at, eg.polymarket_id
+          FROM event_groups eg
+          WHERE eg.polymarket_id IS NOT NULL AND (${rootCond})
+            AND eg.title ~* 'vs\\.?'
+            AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
+          ORDER BY eg.volume DESC LIMIT 300
+        `),
+        pool.query(`
+          SELECT m.id, m.question, m.slug, m.category, m.tags,
+            m.image_url, m.end_date_iso, m.volume, m.volume_24hr, m.liquidity,
+            m.neg_risk, m.created_at, m.active, m.closed, m.polymarket_id,
+            m.condition_id, m.minimum_tick_size, m.minimum_order_size
+          FROM markets m
+          WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
+            AND (${rootCondM}) AND m.question ~* 'vs\\.?' AND m.closed = false
+          ORDER BY m.volume DESC LIMIT 100
+        `),
+      ]);
+
+      // Load sub-markets for event groups
+      const groupIds = egResult.rows.map((r: any) => r.id);
+      let subMarketRows: any[] = [];
+      if (groupIds.length > 0) {
+        const { rows } = await pool.query(
+          `SELECT m.id, m.event_group_id, m.question, m.group_item_title, m.slug,
+            m.image_url, m.end_date_iso, m.volume, m.liquidity,
+            m.active, m.closed, m.condition_id, m.minimum_tick_size, m.minimum_order_size,
+            m.polymarket_id, m.created_at, m.description
+          FROM markets m WHERE m.event_group_id = ANY($1) AND m.closed = false
+          ORDER BY m.created_at`,
+          [groupIds]
+        );
+        subMarketRows = rows;
+      }
+
+      // Load tokens for all markets
+      const allMarketIds = [
+        ...subMarketRows.map((m: any) => m.id),
+        ...standaloneResult.rows.map((r: any) => r.id),
+      ];
+      let tokenRows: any[] = [];
+      if (allMarketIds.length > 0) {
+        const { rows } = await pool.query(
+          `SELECT market_id, token_id, outcome, price, label FROM tokens WHERE market_id = ANY($1)`,
+          [allMarketIds]
+        );
+        tokenRows = rows;
+      }
+
+      const cacheData = {
+        eventGroups: egResult.rows,
+        standaloneMarkets: standaloneResult.rows,
+        subMarkets: subMarketRows,
+        tokens: tokenRows,
+        cachedAt: new Date().toISOString(),
+      };
+
+      await pool.query(
+        `INSERT INTO api_cache (key, data, updated_at) VALUES ('sports_live', $1::jsonb, NOW())
+         ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
+        [JSON.stringify(cacheData)]
+      );
+    } catch (cacheErr) {
+      console.error('Sports cache precompute error:', cacheErr);
+    }
   } catch (err) {
     return NextResponse.json({
       error: (err as Error).message,

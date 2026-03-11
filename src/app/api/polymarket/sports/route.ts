@@ -142,6 +142,20 @@ function isPlaceholderMarket(pm: PMMarket): boolean {
 }
 
 async function handleMatches(offset: number, limit: number, sportFilter: string, leagueFilter: string) {
+  // Try precomputed cache for unfiltered first page (fastest path)
+  if (!sportFilter && !leagueFilter && offset === 0) {
+    try {
+      const { rows: cacheRows } = await pool.query(
+        `SELECT data FROM api_cache WHERE key = 'sports_live' AND updated_at > NOW() - INTERVAL '15 minutes'`
+      );
+      if (cacheRows.length > 0) {
+        const cached = cacheRows[0].data;
+        const result = await buildFromCache(cached, limit);
+        if (result) return result;
+      }
+    } catch { /* fall through to live queries */ }
+  }
+
   // Build tag filter conditions (same pattern as handleFutures)
   const SPORT_ROOT_CONDITION_EG = `(${[
     'sports', 'esports', ...Object.keys(PARENT_SPORTS),
@@ -611,6 +625,100 @@ function mergeMatchEvents(events: EventGroup[]): EventGroup[] {
   }
 
   return merged;
+}
+
+// ═══════════════════════════════════════════════════
+//  Cache → response builder (single DB read path)
+// ═══════════════════════════════════════════════════
+
+async function buildFromCache(cached: any, limit: number): Promise<NextResponse | null> {
+  try {
+    const { eventGroups, standaloneMarkets, subMarkets, tokens: tokenRows } = cached;
+    if (!eventGroups || !Array.isArray(eventGroups)) return null;
+
+    // Build tokensByMarket lookup
+    const tokensByMarket: Record<string, Token[]> = {};
+    for (const t of tokenRows || []) {
+      if (!tokensByMarket[t.market_id]) tokensByMarket[t.market_id] = [];
+      tokensByMarket[t.market_id].push({
+        id: t.token_id, token_id: t.token_id,
+        outcome: t.outcome, price: parseFloat(t.price),
+        label: t.label || undefined,
+      });
+    }
+
+    // Build subMarkets lookup
+    const allSubMarkets: Record<string, any[]> = {};
+    for (const r of subMarkets || []) {
+      if (!allSubMarkets[r.event_group_id]) allSubMarkets[r.event_group_id] = [];
+      allSubMarkets[r.event_group_id].push(r);
+    }
+
+    // Process event groups (same logic as handleMatches)
+    const rawEvents: EventGroup[] = [];
+
+    for (const eg of eventGroups) {
+      const marketRows = allSubMarkets[eg.id] || [];
+      if (marketRows.length === 0) continue;
+
+      const pmEvent = toPMEvent(eg, marketRows, tokensByMarket);
+      if (isMatchSettled(pmEvent)) continue;
+
+      const matchInfo = buildMatchInfo(pmEvent);
+      if (!matchInfo) continue;
+
+      const nonPlaceholder = pmEvent.markets.filter(m => !isPlaceholderMarket(m));
+      const moneyline = nonPlaceholder.find(m =>
+        !m.groupItemTitle && m.question === pmEvent.title
+      ) || nonPlaceholder.find(m =>
+        m.groupItemTitle === 'Match Winner' || m.question === 'Match Winner'
+      ) || nonPlaceholder.find(m =>
+        /moneyline/i.test(m.groupItemTitle || '')
+      );
+      const others = nonPlaceholder.filter(m => m !== moneyline).slice(0, moneyline ? 2 : 3);
+      const orderedMarkets = moneyline ? [moneyline, ...others] : others;
+      const mappedMarkets = orderedMarkets.map(m => mapToMarket(pmEvent, m));
+
+      rawEvents.push({
+        id: pmEvent.id, title: pmEvent.title, slug: pmEvent.slug,
+        description: pmEvent.description || null,
+        category: pmEvent.tags?.[0]?.label || 'Sports',
+        tags: pmEvent.tags?.map(t => ({ slug: t.slug, label: t.label })) || [],
+        image_url: pmEvent.image || null, end_date_iso: pmEvent.endDate || null,
+        volume: pmEvent.volume || 0, liquidity: pmEvent.liquidity || 0,
+        created_at: pmEvent.createdAt || pmEvent.creationDate || new Date().toISOString(),
+        markets: mappedMarkets, match: matchInfo,
+      });
+    }
+
+    // Process standalone markets
+    for (const m of standaloneMarkets || []) {
+      const mTokens = tokensByMarket[m.id] || [];
+      const matchInfo = buildStandaloneMatch(m, mTokens);
+      if (!matchInfo) continue;
+
+      rawEvents.push({
+        id: m.id, title: m.question, slug: m.slug,
+        description: null, category: m.category || 'Sports',
+        tags: (m.tags || []).map((t: any) => ({ slug: t.slug, label: t.label })),
+        image_url: m.image_url || null, end_date_iso: m.end_date_iso || null,
+        volume: parseFloat(m.volume) || 0, liquidity: parseFloat(m.liquidity) || 0,
+        created_at: m.created_at,
+        markets: [buildSingleMarket(m, mTokens)], match: matchInfo,
+      });
+    }
+
+    const events = mergeMatchEvents(rawEvents);
+    const trimmed = events.slice(0, limit);
+    const taxonomy = await buildTaxonomyFromDB();
+
+    return NextResponse.json(
+      { events: trimmed, hasMore: trimmed.length < events.length, total: events.length, ...(taxonomy ? { taxonomy } : {}) },
+      { headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' } }
+    );
+  } catch {
+    return null; // Fall through to live queries
+  }
 }
 
 // ═══════════════════════════════════════════════════
