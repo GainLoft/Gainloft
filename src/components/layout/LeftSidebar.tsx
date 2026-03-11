@@ -120,15 +120,15 @@ function SidebarIcon({ name, size = 18 }: { name: string; size?: number }) {
   }
 }
 
-export default function LeftSidebar() {
+export default function LeftSidebar({ initialCategories = [] }: { initialCategories?: CategoryItem[] }) {
   const pathname = usePathname();
   const isSports = pathname.startsWith('/sports');
 
-  // Fetch dynamic category list from Polymarket
+  // Fetch dynamic category list from Polymarket (server-provided initial data prevents flash)
   const { data: categories = [] } = useSWR<CategoryItem[]>(
     '/api/polymarket/categories',
     swrFetcher,
-    { refreshInterval: 600000, revalidateOnFocus: false, dedupingInterval: 300000 }
+    { fallbackData: initialCategories, refreshInterval: 600000, revalidateOnFocus: false, dedupingInterval: 300000 }
   );
 
   // Determine current path context
