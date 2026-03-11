@@ -24,70 +24,76 @@ export async function GET(req: NextRequest) {
   let totalSkipped = 0;
   let totalPages = 0;
 
-  for (const { tag, quickPages } of SPORT_TAGS) {
-    const pageSize = 100;
-    for (let page = 0; page < quickPages; page++) {
-      try {
-        const sp = new URLSearchParams({
-          tag_slug: tag,
-          limit: String(pageSize),
-          offset: String(page * pageSize),
-          order: 'volume24hr',
-          ascending: 'false',
-          active: 'true',
-        });
-        const res = await fetch(`${GAMMA_API}/events?${sp}`, {
-          cache: 'no-store',
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-        });
-        if (!res.ok) break;
-        const events: any[] = await res.json();
-        if (events.length === 0) break;
+  // Use a single dedicated client for all writes (avoids pool exhaustion on transaction pooler)
+  const client = await pool.connect();
+  try {
+    for (const { tag, quickPages } of SPORT_TAGS) {
+      const pageSize = 100;
+      for (let page = 0; page < quickPages; page++) {
+        try {
+          const sp = new URLSearchParams({
+            tag_slug: tag,
+            limit: String(pageSize),
+            offset: String(page * pageSize),
+            order: 'volume24hr',
+            ascending: 'false',
+            active: 'true',
+          });
+          const res = await fetch(`${GAMMA_API}/events?${sp}`, {
+            cache: 'no-store',
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+          });
+          if (!res.ok) break;
+          const events: any[] = await res.json();
+          if (events.length === 0) break;
 
-        // Process events in parallel batches of 5
-        for (let i = 0; i < events.length; i += 5) {
-          const batch = events.slice(i, i + 5);
-          const results = await Promise.allSettled(batch.map(e => upsertEvent(e)));
-          for (const r of results) {
-            if (r.status === 'fulfilled') totalSynced++;
-            else totalSkipped++;
+          for (const e of events) {
+            try {
+              await upsertEvent(client, e);
+              totalSynced++;
+            } catch {
+              totalSkipped++;
+            }
           }
-        }
 
-        totalPages++;
-        if (events.length < pageSize) break;
-      } catch {
-        break;
+          totalPages++;
+          if (events.length < pageSize) break;
+        } catch {
+          break;
+        }
       }
     }
-  }
 
-  // Resolution sync
-  let totalResolved = 0;
-  try {
-    const { rows: activeMarkets } = await pool.query(`
-      SELECT id, polymarket_id FROM markets
-      WHERE polymarket_id IS NOT NULL AND closed = false
-      ORDER BY created_at DESC LIMIT 200
-    `);
-    for (const market of activeMarkets) {
-      try {
-        const res = await fetch(
-          `${GAMMA_API}/markets/${market.polymarket_id}`,
-          { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } }
-        );
-        if (!res.ok) continue;
-        const pm = await res.json();
-        if (pm.closed || !pm.active) {
-          await pool.query(`
-            UPDATE markets SET closed = true, resolved = true, active = false, accepting_orders = false
-            WHERE id = $1
-          `, [market.id]);
-          totalResolved++;
-        }
-      } catch { /* skip */ }
-    }
-  } catch { /* skip */ }
+    // Resolution sync
+    let totalResolved = 0;
+    try {
+      const { rows: activeMarkets } = await client.query(`
+        SELECT id, polymarket_id FROM markets
+        WHERE polymarket_id IS NOT NULL AND closed = false
+        ORDER BY created_at DESC LIMIT 200
+      `);
+      for (const market of activeMarkets) {
+        try {
+          const res = await fetch(
+            `${GAMMA_API}/markets/${market.polymarket_id}`,
+            { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } }
+          );
+          if (!res.ok) continue;
+          const pm = await res.json();
+          if (pm.closed || !pm.active) {
+            await client.query(`
+              UPDATE markets SET closed = true, resolved = true, active = false, accepting_orders = false
+              WHERE id = $1
+            `, [market.id]);
+            totalResolved++;
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* skip */ }
+
+  } finally {
+    client.release();
+  }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
@@ -102,7 +108,7 @@ export async function GET(req: NextRequest) {
 
 // ── Upsert logic (same as sync/route.ts but inline to avoid HTTP calls) ──
 
-async function upsertEvent(e: any) {
+async function upsertEvent(client: any, e: any) {
   const markets = e.markets || [];
   if (markets.length === 0) return;
 
@@ -112,7 +118,7 @@ async function upsertEvent(e: any) {
   let eventGroupId: string | null = null;
 
   if (isMulti) {
-    const { rows } = await pool.query(`
+    const { rows } = await client.query(`
       INSERT INTO event_groups (polymarket_id, title, slug, description, category, tags, image_url, end_date_iso, volume, volume_24hr, liquidity, neg_risk)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
@@ -132,15 +138,15 @@ async function upsertEvent(e: any) {
   }
 
   for (const m of markets) {
-    await upsertMarket(m, e, tags, eventGroupId);
+    await upsertMarket(client, m, e, tags, eventGroupId);
   }
 }
 
-async function upsertMarket(m: any, e: any, tags: string, eventGroupId: string | null) {
+async function upsertMarket(client: any, m: any, e: any, tags: string, eventGroupId: string | null) {
   const baseSlug = m.slug || e.slug;
   let rows: any[];
   try {
-    ({ rows } = await pool.query(`
+    ({ rows } = await client.query(`
       INSERT INTO markets (
         polymarket_id, condition_id, question, group_item_title, description,
         category, tags, slug, image_url, resolution_source,
@@ -172,7 +178,7 @@ async function upsertMarket(m: any, e: any, tags: string, eventGroupId: string |
     ]));
   } catch (slugErr: any) {
     if (slugErr.code === '23505' && slugErr.constraint?.includes('slug')) {
-      ({ rows } = await pool.query(`
+      ({ rows } = await client.query(`
         INSERT INTO markets (
           polymarket_id, condition_id, question, group_item_title, description,
           category, tags, slug, image_url, resolution_source,
@@ -217,7 +223,7 @@ async function upsertMarket(m: any, e: any, tags: string, eventGroupId: string |
   for (let i = 0; i < outcomes.length; i++) {
     const tokenId = tokenIds[i] || `${m.id}-${i}`;
     try {
-      await pool.query(`
+      await client.query(`
         INSERT INTO tokens (market_id, token_id, outcome, price, label)
         VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (market_id, outcome) DO UPDATE SET
@@ -225,7 +231,7 @@ async function upsertMarket(m: any, e: any, tags: string, eventGroupId: string |
       `, [marketDbId, tokenId, outcomes[i], prices[i] || 0.5, m.groupItemTitle || null]);
     } catch (tokenErr: any) {
       if (tokenErr.code === '23505') {
-        await pool.query(`
+        await client.query(`
           UPDATE tokens SET price = $1, label = $2
           WHERE market_id = $3 AND outcome = $4
         `, [prices[i] || 0.5, m.groupItemTitle || null, marketDbId, outcomes[i]]);
