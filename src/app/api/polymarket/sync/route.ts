@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
+export const maxDuration = 300; // 5 min for Pro plan
+
 /**
  * Bulk sync events from Polymarket gamma API into local DB.
  * Paginates through ALL events (100 per page) until exhausted.

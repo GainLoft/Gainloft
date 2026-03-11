@@ -5,6 +5,7 @@ import { buildMatchInfo, mapToMarket, PMEvent, PMMarket } from '@/lib/polymarket
 import { startSyncScheduler } from '@/lib/sportsSyncScheduler';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 // Start auto-sync scheduler on first request (keeps DB fresh for futures tab)
 startSyncScheduler();
