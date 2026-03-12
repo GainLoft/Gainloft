@@ -26,12 +26,20 @@ export async function GET() {
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 
+// Skip auto-generated crypto time-series events (5m, 15m, 30m, hourly, daily, weekly)
+const CRYPTO_SERIES_RE = /^(btc|eth|sol|xrp|doge|bnb|ada|dot|avax|matic|link|bitcoin|ethereum|solana|dogecoin|cardano|ripple)-(updown|up-or-down|up-down|multistrike)/i;
+function isCryptoSeries(slug: string): boolean {
+  return CRYPTO_SERIES_RE.test(slug);
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const tag: string = body.tag || '';
     const maxPages: number = body.maxPages || 20;
     const startOffset: number = body.startOffset || 0;
+    const sortBy: string = body.order || 'volume24hr';
+    const includeInactive: boolean = body.includeInactive || false;
 
     let offset = startOffset;
     const pageSize = 100;
@@ -45,9 +53,9 @@ export async function POST(req: Request) {
       if (tag) sp.set('tag_slug', tag);
       sp.set('limit', String(pageSize));
       sp.set('offset', String(offset));
-      sp.set('order', 'volume24hr');
+      sp.set('order', sortBy);
       sp.set('ascending', 'false');
-      sp.set('active', 'true');
+      if (!includeInactive) sp.set('active', 'true');
 
       const res = await fetch(`${GAMMA_API}/events?${sp.toString()}`, {
         cache: 'no-store',
@@ -59,6 +67,11 @@ export async function POST(req: Request) {
       if (events.length === 0) break;
 
       for (const e of events) {
+        // Skip auto-generated crypto time-series
+        if (isCryptoSeries(e.slug || '')) {
+          totalSkipped++;
+          continue;
+        }
         try {
           await upsertEvent(e);
           totalSynced++;
