@@ -31,8 +31,9 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const tag: string = body.tag || '';
     const maxPages: number = body.maxPages || 20;
+    const startOffset: number = body.startOffset || 0;
 
-    let offset = 0;
+    let offset = startOffset;
     const pageSize = 100;
     let totalSynced = 0;
     let totalSkipped = 0;
