@@ -44,8 +44,8 @@ export async function GET(req: Request) {
       egParams.push(JSON.stringify([{ slug: 'sports' }]), JSON.stringify([{ slug: 'games' }]), JSON.stringify([{ slug: 'esports' }]));
     }
 
-    // New page: only active events; all other pages: exclude fully-resolved groups
-    if (order === 'newest') {
+    // Filter event groups by active/closed status
+    if (order === 'newest' || active === 'true') {
       egWhere.push(`EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.active = true)`);
     } else {
       // Exclude event groups where ALL child markets are closed/resolved
@@ -97,10 +97,12 @@ export async function GET(req: Request) {
       mParams.push(JSON.stringify([{ slug: 'sports' }]), JSON.stringify([{ slug: 'games' }]), JSON.stringify([{ slug: 'esports' }]));
     }
 
-    // New page: only active; all other pages: exclude resolved/closed by default
+    // Filter standalone markets by active/closed status
     if (order === 'newest') {
       mWhere.push('m.active = true');
-    } else if (active === null && closed === null) {
+    } else if (active !== null) {
+      // handled below
+    } else if (closed === null) {
       // Default: hide closed/resolved markets from browse pages
       mWhere.push('m.closed = false');
     }
