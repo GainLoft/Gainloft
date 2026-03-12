@@ -226,13 +226,14 @@ async function upsertEvent(e: any) {
 
   if (isMulti) {
     const { rows } = await pool.query(`
-      INSERT INTO event_groups (polymarket_id, title, slug, description, category, tags, image_url, end_date_iso, volume, volume_24hr, liquidity, neg_risk)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      INSERT INTO event_groups (polymarket_id, title, slug, description, category, tags, image_url, end_date_iso, volume, volume_24hr, liquidity, neg_risk, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
         title = EXCLUDED.title, slug = EXCLUDED.slug, description = EXCLUDED.description,
         tags = EXCLUDED.tags, image_url = EXCLUDED.image_url,
         volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
-        liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso
+        liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
+        created_at = EXCLUDED.created_at
       RETURNING id
     `, [
       e.id, e.title, e.slug,
@@ -240,6 +241,7 @@ async function upsertEvent(e: any) {
       e.image || null, e.endDate || null,
       e.volume || 0, e.volume24hr || 0, e.liquidity || 0,
       e.negRisk || false,
+      e.createdAt || new Date().toISOString(),
     ]);
     eventGroupId = rows[0].id;
   }
@@ -247,7 +249,7 @@ async function upsertEvent(e: any) {
   // Batch upsert all markets in one query using unnest
   const mktValues: any[] = [];
   const mktPlaceholders: string[] = [];
-  const cols = 22;
+  const cols = 23;
   let pi = 1;
 
   for (const m of markets) {
@@ -268,6 +270,7 @@ async function upsertEvent(e: any) {
       parseFloat(m.volume) || 0, m.volume24hr || 0,
       parseFloat(m.liquidity) || 0, e.negRisk || false,
       eventGroupId,
+      m.createdAt || e.createdAt || new Date().toISOString(),
     );
   }
 
@@ -279,7 +282,8 @@ async function upsertEvent(e: any) {
         category, tags, slug, image_url, resolution_source,
         minimum_tick_size, minimum_order_size,
         active, closed, resolved, accepting_orders,
-        end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id
+        end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id,
+        created_at
       ) VALUES ${mktPlaceholders.join(',')}
       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
         question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
@@ -287,7 +291,8 @@ async function upsertEvent(e: any) {
         resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
         volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
         liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
-        tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id
+        tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id,
+        created_at = EXCLUDED.created_at
       RETURNING id, polymarket_id
     `, mktValues));
   } catch (err: any) {
@@ -303,15 +308,17 @@ async function upsertEvent(e: any) {
               category, tags, slug, image_url, resolution_source,
               minimum_tick_size, minimum_order_size,
               active, closed, resolved, accepting_orders,
-              end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+              end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id,
+              created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
             ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
               question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
               active = EXCLUDED.active, closed = EXCLUDED.closed,
               resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
               volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
               liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
-              tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id
+              tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id,
+              created_at = EXCLUDED.created_at
             RETURNING id, polymarket_id
           `, [
             m.id, m.conditionId || '', m.question,
@@ -326,6 +333,7 @@ async function upsertEvent(e: any) {
             parseFloat(m.volume) || 0, m.volume24hr || 0,
             parseFloat(m.liquidity) || 0, e.negRisk || false,
             eventGroupId,
+            m.createdAt || e.createdAt || new Date().toISOString(),
           ]);
           marketRows.push(rows[0]);
         } catch { /* skip individual market */ }

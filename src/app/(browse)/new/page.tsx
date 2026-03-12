@@ -6,7 +6,7 @@ export const revalidate = 300;
 async function getNewData(): Promise<Market[]> {
   try {
     const base = process.env.SITE_URL || 'https://gainloft.com';
-    const res = await fetch(`${base}/api/polymarket/events?limit=30&order=volume24hr&active=true`);
+    const res = await fetch(`${base}/api/polymarket/events?limit=30&order=newest`);
     if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data) ? data : [];

@@ -19,7 +19,7 @@ export default function NewClient({ initialMarkets = [] }: { initialMarkets?: Ma
   useEffect(() => {
     if (initialMarkets.length > 0) return;
     setLoading(true);
-    fetch(`/api/polymarket/events?limit=${PAGE_SIZE}&offset=0&order=volume24hr&active=true`)
+    fetch(`/api/polymarket/events?limit=${PAGE_SIZE}&offset=0&order=newest`)
       .then(r => r.json())
       .then((data: Market[]) => {
         const arr = Array.isArray(data) ? data : [];
@@ -35,7 +35,7 @@ export default function NewClient({ initialMarkets = [] }: { initialMarkets?: Ma
   const loadMore = useCallback(() => {
     if (loading || !hasMore) return;
     setLoading(true);
-    fetch(`/api/polymarket/events?limit=${PAGE_SIZE}&offset=${offset}&order=volume24hr&active=true`)
+    fetch(`/api/polymarket/events?limit=${PAGE_SIZE}&offset=${offset}&order=newest`)
       .then(r => r.json())
       .then((data: Market[]) => {
         const arr = Array.isArray(data) ? data : [];
