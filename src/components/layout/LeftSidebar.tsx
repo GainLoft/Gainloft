@@ -152,8 +152,8 @@ export default function LeftSidebar({ initialCategories = [] }: { initialCategor
 
   const subcategories: SubItem[] = taxonomyData?.items || [];
 
-  // Show subcategory sidebar when on a category page with data
-  if (taxonomyKey && subcategories.length > 0) {
+  // Show subcategory sidebar when on a category page (even while taxonomy loads)
+  if (taxonomyKey) {
     return (
       <aside className="left-sidebar" style={{ width: 200, flexShrink: 0, paddingTop: 20 }}>
         <nav style={{ position: 'sticky', top: 72, display: 'flex', flexDirection: 'column', gap: 2 }}>
