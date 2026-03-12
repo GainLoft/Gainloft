@@ -38,7 +38,7 @@ export default async function CategoryLayout({
   const label = slugToLabel(category);
 
   return (
-    <div style={{ display: 'flex', gap: 0 }}>
+    <div style={{ display: 'flex', gap: 24 }}>
       {/* Sidebar */}
       <aside className="category-sidebar" style={{ width: 200, flexShrink: 0, paddingTop: 24 }}>
         <nav style={{ position: 'sticky', top: 72 }}>
