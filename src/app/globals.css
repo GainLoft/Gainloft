@@ -373,9 +373,17 @@ button, a, [role="button"] {
   }
 }
 
-.sidebar-nav-item:hover {
+.sidebar-nav-item:hover,
+.sidebar-sub-item:hover {
   background: var(--bg-hover) !important;
   color: var(--text-primary) !important;
+}
+
+/* Hide category sidebar on mobile */
+@media (max-width: 768px) {
+  .category-sidebar {
+    display: none !important;
+  }
 }
 
 /* ── Breaking page responsive ── */
