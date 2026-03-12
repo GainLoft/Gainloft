@@ -2,6 +2,14 @@
 const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   compress: true,
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: '**.polymarket.com' },
+      { protocol: 'https', hostname: '**.amazonaws.com' },
+      { protocol: 'https', hostname: 'polymarket-upload.s3.us-east-2.amazonaws.com' },
+    ],
+    minimumCacheTTL: 86400, // Cache images for 24 hours
+  },
   experimental: {
     optimizeCss: true, // Inlines critical CSS → eliminates render-blocking external CSS
   },

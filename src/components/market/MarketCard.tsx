@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Market } from '@/lib/types';
 
 /** Label that truncates with ellipsis and scrolls on hover when overflowing */
@@ -171,7 +172,7 @@ export default function MarketCard({ market }: { market: Market }) {
         <div className="flex items-start gap-3">
           <div className="flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-lg overflow-hidden">
             {market.image_url ? (
-              <img src={market.image_url} alt="" className="h-[40px] w-[40px] rounded-lg object-cover" loading="lazy" />
+              <Image src={market.image_url} alt="" width={40} height={40} className="rounded-lg object-cover" loading="lazy" />
             ) : (
               <div className="h-[40px] w-[40px] rounded-lg" style={{ background: 'var(--bg-surface)' }} />
             )}
@@ -242,7 +243,7 @@ export default function MarketCard({ market }: { market: Market }) {
       <div className="flex items-start gap-3">
         <div className="flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-lg overflow-hidden">
           {market.image_url ? (
-            <img src={market.image_url} alt="" className="h-[40px] w-[40px] rounded-lg object-cover" loading="lazy" />
+            <Image src={market.image_url} alt="" width={40} height={40} className="rounded-lg object-cover" loading="lazy" />
           ) : (
             <div className="h-[40px] w-[40px] rounded-lg" style={{ background: 'var(--bg-surface)' }} />
           )}
