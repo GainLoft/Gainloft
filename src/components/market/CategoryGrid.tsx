@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import useSWR from 'swr';
 import MarketCard from './MarketCard';
 import SeriesCard, { SeriesData } from './SeriesCard';
@@ -10,7 +10,7 @@ import { useLiveMarkets } from '@/hooks/useLivePrices';
 
 const swrFetcher = (url: string) => fetch(url).then(r => r.json());
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 30;
 
 /**
  * Fetches markets from Polymarket API directly (live) with full pagination.
@@ -75,6 +75,26 @@ export default function CategoryGrid({ category, subtag, tag, initialMarkets }: 
     }
   }, [tagParam, offset]);
 
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const canLoadMore = hasMore && (liveMarkets?.length ?? 0) >= PAGE_SIZE;
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !canLoadMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loadingMore) {
+          loadMore();
+        }
+      },
+      { rootMargin: '400px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [canLoadMore, loadingMore, loadMore]);
+
   const isLoading = liveLoading && allMarkets.length === 0;
 
   if (isLoading) {
@@ -105,20 +125,17 @@ export default function CategoryGrid({ category, subtag, tag, initialMarkets }: 
           <MarketCard key={market.id} market={market} />
         ))}
       </div>
-      {hasMore && (liveMarkets?.length ?? 0) >= PAGE_SIZE && (
-        <div className="flex justify-center pb-8">
-          <button
-            onClick={loadMore}
-            disabled={loadingMore}
-            className="rounded-[8px] px-6 py-2.5 text-[13px] font-medium transition-all hover:opacity-80 disabled:opacity-40"
-            style={{
-              background: 'var(--bg-surface)',
-              color: 'var(--text-secondary)',
-              border: '1px solid var(--border)',
-            }}
-          >
-            {loadingMore ? 'Loading...' : 'Load More Markets'}
-          </button>
+      {loadingMore && (
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={`skel-${i}`} className="rounded-[10px] animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: 190 }} />
+          ))}
+        </div>
+      )}
+      {canLoadMore && <div ref={sentinelRef} style={{ height: 1 }} />}
+      {!canLoadMore && allMarkets.length > 0 && (
+        <div className="text-center py-6" style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+          No more markets
         </div>
       )}
     </>

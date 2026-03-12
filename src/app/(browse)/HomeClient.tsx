@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
 import MarketCard from '@/components/market/MarketCard';
@@ -10,6 +10,7 @@ import { useLiveMarkets } from '@/hooks/useLivePrices';
 
 const swrFetcher = (url: string) => fetch(url).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
 
+const PAGE_SIZE = 30;
 const ALL_MARKET_TAGS = ['All', ...CATEGORIES];
 
 function fmtVol(vol: number): string {
@@ -87,16 +88,79 @@ export default function HomeClient({ initialMarkets = [] }: { initialMarkets?: M
   const [showBookmarked, setShowBookmarked] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'active' | 'resolved'>('active');
 
-  // ── Fetch real data from database ──
-  const eventsUrl = allMarketTag === 'All'
-    ? '/api/polymarket/events?limit=50&order=volume24hr'
-    : `/api/polymarket/events?limit=100&order=volume24hr&tag=${encodeURIComponent(getCategorySlug(allMarketTag))}`;
+  // ── Infinite scroll state ──
+  const [extraMarkets, setExtraMarkets] = useState<Market[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const { data: rawMarkets = initialMarkets, isLoading } = useSWR<Market[]>(
+  // ── Fetch real data from database ──
+  const tagParam = allMarketTag !== 'All' ? `&tag=${encodeURIComponent(getCategorySlug(allMarketTag))}` : '';
+  const eventsUrl = `/api/polymarket/events?limit=${PAGE_SIZE}&order=volume24hr${tagParam}`;
+
+  const { data: swrMarkets = initialMarkets, isLoading } = useSWR<Market[]>(
     eventsUrl,
     swrFetcher,
     { refreshInterval: 30000, fallbackData: initialMarkets.length > 0 ? initialMarkets : undefined }
   );
+
+  // Reset pagination when category changes
+  useEffect(() => {
+    setExtraMarkets([]);
+    setOffset(PAGE_SIZE);
+    setHasMore(true);
+  }, [allMarketTag]);
+
+  // Combine SWR data + extra pages, deduplicate by id
+  const rawMarkets = useMemo(() => {
+    const combined = [...swrMarkets, ...extraMarkets];
+    const seen = new Set<string>();
+    return combined.filter(m => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+  }, [swrMarkets, extraMarkets]);
+
+  // Load more function
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const url = `/api/polymarket/events?limit=${PAGE_SIZE}&offset=${offset}&order=volume24hr${tagParam}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const newMarkets: Market[] = Array.isArray(data) ? data : [];
+      if (newMarkets.length < PAGE_SIZE) {
+        setHasMore(false);
+      }
+      if (newMarkets.length > 0) {
+        setExtraMarkets(prev => [...prev, ...newMarkets]);
+        setOffset(prev => prev + PAGE_SIZE);
+      }
+    } catch {
+      // Silently fail, user can scroll again to retry
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, offset, tagParam]);
+
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMore();
+        }
+      },
+      { rootMargin: '400px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   // Merge live CLOB midpoint prices into all markets
   const allMarkets = useLiveMarkets(rawMarkets);
@@ -523,7 +587,7 @@ export default function HomeClient({ initialMarkets = [] }: { initialMarkets?: M
             </div>
           </div>
 
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-8">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-4">
             {isLoading && gridMarkets.length === 0 ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="rounded-[10px] animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: 190 }} />
@@ -537,11 +601,24 @@ export default function HomeClient({ initialMarkets = [] }: { initialMarkets?: M
             )}
           </div>
 
-          <div className="pb-8 text-center">
-            <Link href="/markets" className="text-[13px] font-medium hover:underline" style={{ color: 'var(--brand-blue)' }}>
-              Show more markets
-            </Link>
-          </div>
+          {/* Loading more skeletons */}
+          {loadingMore && (
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={`skel-${i}`} className="rounded-[10px] animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: 190 }} />
+              ))}
+            </div>
+          )}
+
+          {/* Infinite scroll sentinel */}
+          <div ref={sentinelRef} style={{ height: 1 }} />
+
+          {/* End of list */}
+          {!hasMore && gridMarkets.length > 0 && (
+            <div className="pb-8 text-center" style={{ color: 'var(--text-muted)', fontSize: 13, paddingTop: 8 }}>
+              No more markets
+            </div>
+          )}
         </div>
       </div>
 
@@ -604,11 +681,27 @@ export default function HomeClient({ initialMarkets = [] }: { initialMarkets?: M
             <button onClick={() => setStatusFilter('resolved')} style={{ padding: '4px 10px', fontSize: 12, fontWeight: 500, background: statusFilter === 'resolved' ? 'var(--bg-hover)' : 'transparent', color: statusFilter === 'resolved' ? 'var(--text-primary)' : 'var(--text-secondary)', border: 'none', borderLeft: '1px solid var(--border)', cursor: 'pointer' }}>Resolved</button>
           </div>
         </div>
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 pb-8">
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 pb-4">
           {gridMarkets.map((market) => (
             <MarketCard key={market.id} market={market} />
           ))}
         </div>
+
+        {/* Mobile: loading more skeletons */}
+        {loadingMore && (
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 pb-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={`mskel-${i}`} className="rounded-[10px] animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: 190 }} />
+            ))}
+          </div>
+        )}
+
+        {/* Mobile: end of list */}
+        {!hasMore && gridMarkets.length > 0 && (
+          <div className="pb-8 text-center" style={{ color: 'var(--text-muted)', fontSize: 13, paddingTop: 8 }}>
+            No more markets
+          </div>
+        )}
       </div>
 
     </>
