@@ -534,13 +534,13 @@ interface TaxonomyItem {
 }
 
 async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
-  // All slugs that identify a sports event (parent sports + all known leagues)
-  const allSportSlugs = new Set([
+  // All slugs that identify a sports event (parent sports + all known leagues), deduplicated
+  const allSportSlugs = Array.from(new Set([
     'sports', 'esports',
     ...Object.keys(PARENT_SPORTS),
     ...Object.keys(LEAGUE_TO_SPORT),
-  ]);
-  const rootCond = [...allSportSlugs]
+  ]));
+  const rootCond = allSportSlugs
     .map(s => `tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
 
   // Flat query: get every tag slug + label + count + volume from active sports events
