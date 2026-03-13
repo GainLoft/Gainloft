@@ -508,22 +508,23 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
     'sports', 'esports', ...Object.keys(PARENT_SPORTS),
   ].map(s => `tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
 
-  // Single query: get all tag pairs (sport + co-occurring tag) with counts
+  // Single query: get all tag pairs (sport + co-occurring tag) with counts AND volume
   const { rows } = await pool.query(`
-    SELECT sport_slug, t2->>'slug' as tag_slug, t2->>'label' as tag_label, COUNT(*) as cnt
+    SELECT sport_slug, t2->>'slug' as tag_slug, t2->>'label' as tag_label,
+           COUNT(*) as cnt, SUM(vol) as total_vol
     FROM (
       SELECT
         jsonb_array_elements(sub.tags)->>'slug' as sport_slug,
         jsonb_array_elements(sub.tags) as t2,
-        sub.id
+        sub.id, sub.vol
       FROM (
-        SELECT eg.id, eg.tags
+        SELECT eg.id, eg.tags, COALESCE(eg.volume, 0)::numeric as vol
         FROM event_groups eg
         WHERE eg.polymarket_id IS NOT NULL
           AND (${rootCond})
           AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
         UNION ALL
-        SELECT m.id, m.tags
+        SELECT m.id, m.tags, COALESCE(m.volume, 0)::numeric as vol
         FROM markets m
         WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
           AND (${rootCond})
@@ -532,26 +533,28 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
     ) expanded
     WHERE sport_slug IN (${Object.keys(PARENT_SPORTS).map((_, i) => `$${i + 1}`).join(',')})
     GROUP BY sport_slug, tag_slug, tag_label
-    ORDER BY cnt DESC
+    ORDER BY total_vol DESC
   `, Object.keys(PARENT_SPORTS));
 
   // Build taxonomy from flat rows
-  const sportMap: Record<string, { label: string; count: number; leagues: { slug: string; label: string; count: number }[] }> = {};
+  const sportMap: Record<string, { label: string; count: number; volume: number; leagues: { slug: string; label: string; count: number; volume: number }[] }> = {};
 
   for (const r of rows) {
     const sport = r.sport_slug.toLowerCase();
     const tagSlug = r.tag_slug.toLowerCase();
     const cnt = parseInt(r.cnt);
+    const vol = parseFloat(r.total_vol) || 0;
 
     if (!PARENT_SPORTS[sport]) continue;
 
     if (!sportMap[sport]) {
-      sportMap[sport] = { label: PARENT_SPORTS[sport], count: 0, leagues: [] };
+      sportMap[sport] = { label: PARENT_SPORTS[sport], count: 0, volume: 0, leagues: [] };
     }
 
-    // Self-reference = sport count
+    // Self-reference = sport count/volume
     if (tagSlug === sport) {
       sportMap[sport].count = cnt;
+      sportMap[sport].volume = vol;
       continue;
     }
 
@@ -559,14 +562,24 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
     if (META_TAGS.has(tagSlug) || PARENT_SPORTS[tagSlug]) continue;
 
     if (cnt >= 2) {
-      sportMap[sport].leagues.push({ slug: tagSlug, label: r.tag_label, count: cnt });
+      sportMap[sport].leagues.push({ slug: tagSlug, label: r.tag_label, count: cnt, volume: vol });
     }
   }
 
+  // Sort leagues within each sport by volume desc
+  for (const sport of Object.values(sportMap)) {
+    sport.leagues.sort((a, b) => b.volume - a.volume);
+  }
+
+  // Sort parent sports by volume desc (matches Polymarket's sidebar order)
   const result: TaxonomyItem[] = Object.entries(sportMap)
     .filter(([, v]) => v.count > 0)
-    .map(([slug, v]) => ({ slug, ...v }))
-    .sort((a, b) => b.count - a.count);
+    .map(([slug, v]) => ({ slug, label: v.label, count: v.count, leagues: v.leagues }))
+    .sort((a, b) => {
+      const aVol = sportMap[a.slug].volume;
+      const bVol = sportMap[b.slug].volume;
+      return bVol - aVol;
+    });
 
   return result;
 }
