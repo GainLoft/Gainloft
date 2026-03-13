@@ -5,8 +5,28 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Market } from '@/lib/types';
 
-// Tiny 40x40 gray-blue blur placeholder (base64-encoded 1x1 pixel stretched by Next.js)
-const BLUR_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjZTBlMGUwIi8+PC9zdmc+';
+/** Market thumbnail with blur-to-sharp transition */
+function MarketImage({ src, size = 40 }: { src: string; size?: number }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <div className="flex-shrink-0 rounded-lg overflow-hidden" style={{ width: size, height: size, background: 'var(--bg-surface)' }}>
+      <Image
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        className="object-cover"
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        style={{
+          filter: loaded ? 'none' : 'blur(10px)',
+          transform: loaded ? 'scale(1)' : 'scale(1.1)',
+          transition: 'filter 0.3s ease, transform 0.3s ease',
+        }}
+      />
+    </div>
+  );
+}
 
 /** Label that truncates with ellipsis and scrolls on hover when overflowing */
 function MarqueeLabel({ text, className, style }: { text: string; className?: string; style?: React.CSSProperties }) {
@@ -173,13 +193,11 @@ export default function MarketCard({ market }: { market: Market }) {
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', minHeight: 190 }}
       >
         <div className="flex items-start gap-3">
-          <div className="flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-lg overflow-hidden">
-            {market.image_url ? (
-              <Image src={market.image_url} alt="" width={40} height={40} className="rounded-lg object-cover" loading="lazy" placeholder="blur" blurDataURL={BLUR_PLACEHOLDER} />
-            ) : (
-              <div className="h-[40px] w-[40px] rounded-lg" style={{ background: 'var(--bg-surface)' }} />
-            )}
-          </div>
+          {market.image_url ? (
+            <MarketImage src={market.image_url} />
+          ) : (
+            <div className="h-[40px] w-[40px] rounded-lg flex-shrink-0" style={{ background: 'var(--bg-surface)' }} />
+          )}
           <div className="flex-1 min-w-0">
             <h3 className="text-[14px] font-semibold leading-[18px]" style={{ color: 'var(--text-primary)' }}>
               {seriesInfo.shortTitle}
@@ -244,13 +262,11 @@ export default function MarketCard({ market }: { market: Market }) {
       style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', minHeight: 190 }}
     >
       <div className="flex items-start gap-3">
-        <div className="flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-lg overflow-hidden">
-          {market.image_url ? (
-            <Image src={market.image_url} alt="" width={40} height={40} className="rounded-lg object-cover" loading="lazy" placeholder="blur" blurDataURL={BLUR_PLACEHOLDER} />
-          ) : (
-            <div className="h-[40px] w-[40px] rounded-lg" style={{ background: 'var(--bg-surface)' }} />
-          )}
-        </div>
+        {market.image_url ? (
+          <MarketImage src={market.image_url} />
+        ) : (
+          <div className="h-[40px] w-[40px] rounded-lg flex-shrink-0" style={{ background: 'var(--bg-surface)' }} />
+        )}
         <div className="flex-1 min-w-0">
           <h3 className="text-[14px] font-medium leading-[18px] line-clamp-2" style={{ color: 'var(--text-primary)' }}>
             {market.question}
