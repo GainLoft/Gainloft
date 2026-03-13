@@ -5,7 +5,7 @@ export const maxDuration = 300;
 export const preferredRegion = 'sin1';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
-const MAX_MARKETS_PER_EVENT = 30;
+const MAX_MARKETS_PER_EVENT = 100;
 
 // Skip auto-generated crypto time-series events
 const CRYPTO_SERIES_RE = /^(btc|eth|sol|xrp|doge|bnb|ada|dot|avax|matic|link|bitcoin|ethereum|solana|dogecoin|cardano|ripple)-(updown|up-or-down|up-down|multistrike)/i;
@@ -15,10 +15,14 @@ const TAG_TO_CATEGORY: Record<string, string> = {
   solana: 'Crypto', defi: 'Crypto', nft: 'Crypto', airdrops: 'Crypto',
   politics: 'Politics', elections: 'Politics', congress: 'Politics',
   sports: 'Sports', nba: 'Sports', nfl: 'Sports', mlb: 'Sports', soccer: 'Sports',
+  esports: 'Sports', hockey: 'Sports', tennis: 'Sports', cricket: 'Sports',
+  basketball: 'Sports', baseball: 'Sports', golf: 'Sports', ufc: 'Sports',
+  boxing: 'Sports', rugby: 'Sports', f1: 'Sports', ncaab: 'Sports', ncaaf: 'Sports',
   finance: 'Finance', economy: 'Finance', 'fed-funds': 'Finance',
   tech: 'Tech', ai: 'Tech', science: 'Science',
   culture: 'Culture', music: 'Culture', entertainment: 'Culture',
   geopolitics: 'Geopolitics', climate: 'Climate',
+  games: 'Games',
 };
 
 function deriveCategoryFromTags(tagList: { slug: string; label: string }[]): string | null {
@@ -69,15 +73,14 @@ export async function GET() {
  *
  * Three modes:
  *
- * 1. "discover" (default) — Fetch events with order=id, ascending, from stored cursor offset.
- *    Stable ordering ensures no events are missed. Resumes from last position.
+ * 1. "discover" — Sequential ID-ordered scan of ALL Polymarket events.
+ *    Always upserts (updates existing events with latest data).
  *    Body: { mode?: "discover", maxPages?: number, pageSize?: number, resetCursor?: boolean }
  *
- * 2. "new" — Fetch only events newer than our max DB ID.
- *    Fast check for brand new events. Good for frequent polling.
+ * 2. "new" — Fetch events newer than our max DB ID (no active filter).
  *    Body: { mode: "new", maxPages?: number }
  *
- * 3. "refresh" — Re-sync top events by volume to update prices/stats.
+ * 3. "refresh" — Re-sync top events by volume (no active filter).
  *    Body: { mode: "refresh", limit?: number, category?: string }
  */
 export async function POST(req: NextRequest) {
@@ -105,8 +108,8 @@ export async function POST(req: NextRequest) {
 
 /**
  * Discovery mode: Sequential ID-ordered scan of ALL Polymarket events.
- * Uses a DB-stored cursor to resume across invocations.
- * Guarantees 100% coverage since IDs are immutable (no pagination drift).
+ * Always upserts — updates existing events with latest prices/resolution status.
+ * No tag filters, no active filter — syncs EVERYTHING.
  */
 async function discoverMode(body: any) {
   const maxPages = body.maxPages || 50;
@@ -119,17 +122,9 @@ async function discoverMode(body: any) {
     if (rows[0]) cursor = rows[0].data;
   }
 
-  // Pre-load existing polymarket IDs for skip optimization
-  const { rows: egRows } = await pool.query(`SELECT polymarket_id FROM event_groups WHERE polymarket_id IS NOT NULL`);
-  const { rows: mRows } = await pool.query(`SELECT DISTINCT polymarket_id FROM markets WHERE polymarket_id IS NOT NULL AND event_group_id IS NULL`);
-  const existingIds = new Set<string>();
-  for (const r of egRows) existingIds.add(String(r.polymarket_id));
-  for (const r of mRows) existingIds.add(String(r.polymarket_id));
-
   let offset = cursor.offset;
   let synced = 0;
   let skipped = 0;
-  let existing = 0;
   let page = 0;
   let finished = false;
   let firstError: string | undefined;
@@ -160,11 +155,9 @@ async function discoverMode(body: any) {
 
     for (const e of events) {
       if (CRYPTO_SERIES_RE.test(e.slug || '')) { skipped++; continue; }
-      if (existingIds.has(String(e.id))) { existing++; continue; }
       try {
         await upsertEvent(e);
         synced++;
-        existingIds.add(String(e.id));
       } catch (err) {
         skipped++;
         if (!firstError) firstError = `${e.slug}: ${(err as Error).message}`;
@@ -179,10 +172,10 @@ async function discoverMode(body: any) {
     }
   }
 
-  // Update cursor in DB
-  cursor.offset = finished ? 0 : offset; // Reset to 0 when complete for next sweep
+  // Update cursor
+  cursor.offset = finished ? 0 : offset;
   cursor.totalSynced = (cursor.totalSynced || 0) + synced;
-  cursor.totalChecked = (cursor.totalChecked || 0) + (synced + skipped + existing);
+  cursor.totalChecked = (cursor.totalChecked || 0) + (synced + skipped);
   cursor.lastRun = new Date().toISOString();
   if (finished) {
     cursor.completedAt = new Date().toISOString();
@@ -198,11 +191,7 @@ async function discoverMode(body: any) {
 
   return NextResponse.json({
     mode: 'discover',
-    synced,
-    skipped,
-    existing,
-    pages: page,
-    finished,
+    synced, skipped, pages: page, finished,
     cursor: { offset: cursor.offset, totalSynced: cursor.totalSynced, sweepCount: cursor.sweepCount },
     firstError: firstError || null,
   });
@@ -210,13 +199,12 @@ async function discoverMode(body: any) {
 
 /**
  * New events mode: Quick check for events newer than our max DB ID.
- * Runs in descending ID order so newest events come first.
+ * No active filter — catches all new events including futures and resolved.
  */
 async function newEventsMode(body: any) {
-  const maxPages = body.maxPages || 5;
+  const maxPages = body.maxPages || 10;
   const pageSize = 100;
 
-  // Get our max polymarket_id
   const { rows: maxRows } = await pool.query(`
     SELECT MAX(CAST(polymarket_id AS INTEGER)) as max_id
     FROM event_groups WHERE polymarket_id IS NOT NULL AND polymarket_id ~ '^[0-9]+$'
@@ -228,14 +216,12 @@ async function newEventsMode(body: any) {
   let page = 0;
   let firstError: string | undefined;
 
-  // Fetch newest events first
   for (let p = 0; p < maxPages; p++) {
     const sp = new URLSearchParams({
       limit: String(pageSize),
       offset: String(p * pageSize),
       order: 'id',
       ascending: 'false',
-      active: 'true',
     });
 
     const res = await fetch(`${GAMMA_API}/events?${sp}`, {
@@ -265,26 +251,22 @@ async function newEventsMode(body: any) {
     }
 
     page++;
-    // Stop early if all events on this page are older than our max
     if (allOld) break;
     if (events.length < pageSize) break;
   }
 
   return NextResponse.json({
-    mode: 'new',
-    synced,
-    existing,
-    pages: page,
-    maxDbId,
+    mode: 'new', synced, existing, pages: page, maxDbId,
     firstError: firstError || null,
   });
 }
 
 /**
- * Refresh mode: Re-sync top events by volume to update prices/stats.
+ * Refresh mode: Re-sync top events by volume to update prices/stats/resolution.
+ * No active filter — refreshes both active and recently closed events.
  */
 async function refreshMode(body: any) {
-  const limit = body.limit || 200;
+  const limit = body.limit || 500;
   const category = body.category || null;
   const pageSize = 100;
 
@@ -298,7 +280,6 @@ async function refreshMode(body: any) {
       offset: String(p * pageSize),
       order: 'volume24hr',
       ascending: 'false',
-      active: 'true',
     });
     if (category) sp.set('tag_slug', category);
 
@@ -325,14 +306,12 @@ async function refreshMode(body: any) {
   }
 
   return NextResponse.json({
-    mode: 'refresh',
-    synced,
-    pages,
+    mode: 'refresh', synced, pages,
     firstError: firstError || null,
   });
 }
 
-// ── Upsert logic (matches main sync route — 20 cols event_groups, 35 cols markets) ──
+// ── Upsert logic ──
 
 async function upsertEvent(e: any) {
   const allMarkets = e.markets || [];

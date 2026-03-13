@@ -7,38 +7,6 @@ export const preferredRegion = 'sin1';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 
-const SPORT_TAGS: { tag: string; quickPages: number }[] = [
-  { tag: 'sports', quickPages: 3 },
-  { tag: 'esports', quickPages: 3 },
-];
-
-const MAX_MARKETS_PER_EVENT = 30;
-
-// Skip auto-generated crypto time-series events
-const CRYPTO_SERIES_RE = /^(btc|eth|sol|xrp|doge|bnb|ada|dot|avax|matic|link|bitcoin|ethereum|solana|dogecoin|cardano|ripple)-(updown|up-or-down|up-down|multistrike)/i;
-function isCryptoSeries(slug: string): boolean {
-  return CRYPTO_SERIES_RE.test(slug);
-}
-
-// Map Polymarket tags to categories when API returns category as None
-const TAG_TO_CATEGORY: Record<string, string> = {
-  crypto: 'Crypto', 'crypto-prices': 'Crypto', bitcoin: 'Crypto', ethereum: 'Crypto',
-  solana: 'Crypto', defi: 'Crypto', nft: 'Crypto', airdrops: 'Crypto',
-  politics: 'Politics', elections: 'Politics', congress: 'Politics',
-  sports: 'Sports', nba: 'Sports', nfl: 'Sports', mlb: 'Sports', soccer: 'Sports',
-  finance: 'Finance', economy: 'Finance', 'fed-funds': 'Finance',
-  tech: 'Tech', ai: 'Tech', science: 'Science',
-  culture: 'Culture', music: 'Culture', entertainment: 'Culture',
-  geopolitics: 'Geopolitics', climate: 'Climate',
-};
-function deriveCategoryFromTags(tagList: { slug: string; label: string }[]): string | null {
-  for (const tag of tagList) {
-    const mapped = TAG_TO_CATEGORY[tag.slug];
-    if (mapped) return mapped;
-  }
-  return null;
-}
-
 export async function GET(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get('secret');
   const cronSecret = process.env.CRON_SECRET;
@@ -47,122 +15,104 @@ export async function GET(req: NextRequest) {
   }
 
   const startTime = Date.now();
-  let totalSynced = 0;
-  let totalSkipped = 0;
-  let totalPages = 0;
   let totalResolved = 0;
   let firstError: string | undefined;
-  let gapfillStats: any = {};
+  const gapfillStats: any = {};
 
   try {
-    for (const { tag, quickPages } of SPORT_TAGS) {
-      const pageSize = 50;
-      for (let page = 0; page < quickPages; page++) {
-        try {
-          const sp = new URLSearchParams({
-            tag_slug: tag,
-            limit: String(pageSize),
-            offset: String(page * pageSize),
-            order: 'volume24hr',
-            ascending: 'false',
-            active: 'true',
-          });
-          const res = await fetch(`${GAMMA_API}/events?${sp}`, {
-            cache: 'no-store',
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-          });
-          if (!res.ok) break;
-          const events: any[] = await res.json();
-          if (events.length === 0) break;
+    const baseUrl = process.env.SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+    if (!baseUrl) throw new Error('No SITE_URL or VERCEL_URL configured');
+    const secretParam = cronSecret ? `?secret=${cronSecret}` : '';
 
-          for (const e of events) {
-            if (isCryptoSeries(e.slug || '')) { totalSkipped++; continue; }
-            try {
-              await upsertEvent(e);
-              totalSynced++;
-            } catch (err) {
-              totalSkipped++;
-              if (!firstError) firstError = `${e.slug}: ${(err as Error).message}`;
-            }
-          }
+    // 1. Discover brand new events (newest IDs first, no active filter)
+    const newRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'new', maxPages: 10 }),
+    }).catch(() => null);
+    if (newRes?.ok) gapfillStats.new = await newRes.json();
 
-          totalPages++;
-          if (events.length < pageSize) break;
-        } catch {
-          break;
-        }
-      }
-    }
+    // 2. Refresh top 500 events by volume (updates prices, resolution, closed status)
+    const refreshRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'refresh', limit: 500 }),
+    }).catch(() => null);
+    if (refreshRes?.ok) gapfillStats.refresh = await refreshRes.json();
 
-    // Gap-fill: discover new events + refresh top events + incremental sweep
-    try {
-      const baseUrl = process.env.SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
-      if (baseUrl) {
-        const secretParam = cronSecret ? `?secret=${cronSecret}` : '';
-        // 1. Quick check for brand new events (newest IDs)
-        const newRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
-          method: 'POST', cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'new', maxPages: 3 }),
-        }).catch(() => null);
-        if (newRes?.ok) gapfillStats.new = await newRes.json();
+    // 3. Full incremental sweep — 50 pages = 5,000 events per cron run
+    //    Covers ALL Polymarket events regardless of tags, updates existing ones too
+    const discoverRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'discover', maxPages: 50 }),
+    }).catch(() => null);
+    if (discoverRes?.ok) gapfillStats.discover = await discoverRes.json();
 
-        // 2. Refresh top 200 events by volume (updates prices/stats)
-        const refreshRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
-          method: 'POST', cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'refresh', limit: 200 }),
-        }).catch(() => null);
-        if (refreshRes?.ok) gapfillStats.refresh = await refreshRes.json();
-
-        // 3. Incremental gap-fill sweep (10 pages = 1000 events per cron run)
-        const discoverRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
-          method: 'POST', cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'discover', maxPages: 10 }),
-        }).catch(() => null);
-        if (discoverRes?.ok) gapfillStats.discover = await discoverRes.json();
-      }
-    } catch (gfErr) {
-      console.error('Gapfill error:', gfErr);
-    }
-
-    // Resolution sync
+    // 4. Resolution sync — check recently active markets for closed/resolved status
     try {
       const { rows: activeMarkets } = await pool.query(
         `SELECT id, polymarket_id FROM markets
-         WHERE polymarket_id IS NOT NULL AND closed = false
-         ORDER BY created_at DESC LIMIT 20`
+         WHERE polymarket_id IS NOT NULL AND closed = false AND active = true
+         ORDER BY volume DESC LIMIT 200`
       );
-      for (const market of activeMarkets) {
-        try {
-          const res = await fetch(
-            `${GAMMA_API}/markets/${market.polymarket_id}`,
-            { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } }
-          );
-          if (!res.ok) continue;
-          const pm = await res.json();
-          if (pm.closed || !pm.active) {
-            await pool.query(
-              `UPDATE markets SET closed = true, resolved = true, active = false, accepting_orders = false
-               WHERE id = $1`,
-              [market.id]
+
+      // Batch check resolution via events API (more efficient than per-market)
+      const batchSize = 20;
+      for (let i = 0; i < activeMarkets.length; i += batchSize) {
+        const batch = activeMarkets.slice(i, i + batchSize);
+        await Promise.allSettled(batch.map(async (market: any) => {
+          try {
+            const res = await fetch(
+              `${GAMMA_API}/markets/${market.polymarket_id}`,
+              { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } }
             );
-            totalResolved++;
-          }
-        } catch { /* skip */ }
+            if (!res.ok) return;
+            const pm = await res.json();
+            if (pm.closed || !pm.active) {
+              await pool.query(
+                `UPDATE markets SET closed = $1, resolved = $2, active = $3, accepting_orders = false,
+                 winning_outcome = $4, resolved_at = $5
+                 WHERE id = $6`,
+                [
+                  pm.closed || false,
+                  !!pm.closedTime,
+                  pm.active !== false,
+                  pm.winningOutcome || null,
+                  pm.closedTime || null,
+                  market.id,
+                ]
+              );
+              totalResolved++;
+            }
+          } catch { /* skip */ }
+        }));
       }
     } catch { /* skip */ }
 
-    // Precompute sports cache
+    // 5. Precompute sports cache
     try {
       await pool.query(`CREATE TABLE IF NOT EXISTS api_cache (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
 
-      const SPORT_TAGS_LIST = ['sports', 'esports', 'basketball', 'soccer', 'tennis', 'hockey', 'cricket', 'baseball', 'football', 'rugby', 'ufc', 'boxing', 'golf', 'f1', 'chess', 'table-tennis', 'pickleball', 'lacrosse'];
-      const rootCond = SPORT_TAGS_LIST.map(s => `eg.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
-      const rootCondM = SPORT_TAGS_LIST.map(s => `m.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
+      // Use ALL known sport/league tags dynamically from LEAGUE_TO_SPORT + PARENT_SPORTS
+      const allSportSlugs = [
+        'sports', 'esports',
+        'basketball', 'soccer', 'tennis', 'hockey', 'cricket', 'baseball', 'football', 'rugby',
+        'ufc', 'boxing', 'golf', 'f1', 'chess', 'table-tennis', 'pickleball', 'lacrosse',
+        'nba', 'ncaab', 'wnba', 'nhl', 'nfl', 'mlb', 'mls', 'epl', 'ucl', 'la-liga',
+        'serie-a', 'bundesliga', 'ligue-1', 'premier-league', 'champions-league', 'europa-league',
+        'liga-mx', 'copa-america', 'euros', 'world-cup', 'saudi-pro-league', 'concacaf',
+        'counter-strike-2', 'dota-2', 'league-of-legends', 'valorant', 'honor-of-kings',
+        'call-of-duty', 'overwatch', 'rocket-league', 'rainbow-six',
+        'atp', 'wta', 'us-open', 'wimbledon', 'french-open', 'australian-open',
+        'ipl', 't20-world-cup', 'pga', 'masters', 'six-nations', 'super-bowl',
+        'nfl-playoffs', 'nba-playoffs', 'nba-finals', 'nhl-playoffs', 'march-madness',
+        'ncaaf', 'cfb', 'college-football', 'ncaa', 'college-basketball',
+        'khl', 'npb', 'xfl', 'formula-1',
+      ];
+      const rootCond = allSportSlugs.map(s => `eg.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
+      const rootCondM = allSportSlugs.map(s => `m.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
 
-      // Get event groups and standalone markets in parallel
       const [egResult, standaloneResult] = await Promise.all([
         pool.query(`
           SELECT eg.id, eg.title, eg.slug, eg.description, eg.category, eg.tags,
@@ -174,7 +124,7 @@ export async function GET(req: NextRequest) {
           WHERE eg.polymarket_id IS NOT NULL AND (${rootCond})
             AND eg.title ~* 'vs\\.?'
             AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
-          ORDER BY eg.volume DESC LIMIT 300
+          ORDER BY eg.volume DESC LIMIT 500
         `),
         pool.query(`
           SELECT m.id, m.question, m.slug, m.category, m.tags,
@@ -187,11 +137,10 @@ export async function GET(req: NextRequest) {
           FROM markets m
           WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
             AND (${rootCondM}) AND m.question ~* 'vs\\.?' AND m.closed = false
-          ORDER BY m.volume DESC LIMIT 100
+          ORDER BY m.volume DESC LIMIT 200
         `),
       ]);
 
-      // Load sub-markets for event groups
       const groupIds = egResult.rows.map((r: any) => r.id);
       let subMarketRows: any[] = [];
       if (groupIds.length > 0) {
@@ -210,7 +159,6 @@ export async function GET(req: NextRequest) {
         subMarketRows = rows;
       }
 
-      // Load tokens for all markets
       const allMarketIds = [
         ...subMarketRows.map((m: any) => m.id),
         ...standaloneResult.rows.map((r: any) => r.id),
@@ -241,8 +189,7 @@ export async function GET(req: NextRequest) {
       console.error('Sports cache precompute error:', cacheErr);
     }
 
-    // Warm all API caches (Cloudflare + Vercel edge)
-    const baseUrl = process.env.SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+    // 6. Warm caches
     if (baseUrl) {
       const warmUrls = [
         `${baseUrl}/api/polymarket/sports?tab=live&offset=0&limit=30`,
@@ -250,279 +197,23 @@ export async function GET(req: NextRequest) {
         `${baseUrl}/api/polymarket/events?limit=100&order=newest`,
         `${baseUrl}/api/polymarket/breaking`,
         `${baseUrl}/api/polymarket/taxonomy`,
-        `${baseUrl}/api/polymarket/events/live?tag=politics&limit=100`,
-        `${baseUrl}/api/polymarket/events/live?tag=crypto&limit=100`,
-        `${baseUrl}/api/polymarket/events/live?tag=sports&limit=100`,
       ];
       await Promise.allSettled(warmUrls.map(url => fetch(url, { cache: 'no-store' }).catch(() => {})));
-
-      // Warm ISR page caches (triggers revalidation so HTML contains real data)
-      const pageUrls = [
-        `${baseUrl}/`,
-        `${baseUrl}/sports`,
-        `${baseUrl}/breaking`,
-        `${baseUrl}/new`,
-      ];
+      const pageUrls = [`${baseUrl}/`, `${baseUrl}/sports`, `${baseUrl}/breaking`, `${baseUrl}/new`];
       await Promise.allSettled(pageUrls.map(url => fetch(url, { cache: 'no-store' }).catch(() => {})));
     }
   } catch (err) {
     return NextResponse.json({
       error: (err as Error).message,
-      totalSynced, totalSkipped, totalPages,
+      totalResolved, gapfill: gapfillStats,
       duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
     }, { status: 500 });
   }
 
   return NextResponse.json({
-    totalSynced, totalSkipped, totalResolved, totalPages,
+    totalResolved,
     gapfill: gapfillStats,
     firstError: firstError || null,
     duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
   });
-}
-
-// ── Upsert logic: 3 queries per event (event_group + batch markets + batch tokens) ──
-
-async function upsertEvent(e: any) {
-  const allMarkets = e.markets || [];
-  if (allMarkets.length === 0) return;
-
-  const markets = allMarkets.slice(0, MAX_MARKETS_PER_EVENT);
-  const isMulti = allMarkets.length > 1 || e.negRisk;
-  const tagList = (e.tags || []).map((t: any) => ({ slug: t.slug, label: t.label }));
-  const tags = JSON.stringify(tagList);
-
-  // Derive category from tags when Polymarket returns empty/None category
-  const rawCategory = e.category;
-  const category = (rawCategory && rawCategory !== 'None')
-    ? rawCategory
-    : deriveCategoryFromTags(tagList) || 'General';
-
-  let eventGroupId: string | null = null;
-
-  if (isMulti) {
-    const { rows } = await pool.query(`
-      INSERT INTO event_groups (
-        polymarket_id, title, slug, description, category, tags, image_url, end_date_iso,
-        volume, volume_24hr, liquidity, neg_risk,
-        comment_count, competitive, volume_1wk, volume_1mo, featured, open_interest, start_date,
-        created_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-      ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
-        title = EXCLUDED.title, slug = EXCLUDED.slug, description = EXCLUDED.description,
-        category = EXCLUDED.category, tags = EXCLUDED.tags, image_url = EXCLUDED.image_url,
-        volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
-        liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
-        comment_count = EXCLUDED.comment_count, competitive = EXCLUDED.competitive,
-        volume_1wk = EXCLUDED.volume_1wk, volume_1mo = EXCLUDED.volume_1mo,
-        featured = EXCLUDED.featured, open_interest = EXCLUDED.open_interest,
-        start_date = EXCLUDED.start_date,
-        created_at = EXCLUDED.created_at
-      RETURNING id
-    `, [
-      e.id, e.title, e.slug,
-      e.description || null, category, tags,
-      e.image || null, e.endDate || null,
-      e.volume || 0, e.volume24hr || 0, e.liquidity || 0,
-      e.negRisk || false,
-      e.commentCount || 0, e.competitive || 0,
-      e.volume1wk || 0, e.volume1mo || 0,
-      e.featured || false, e.openInterest || 0,
-      e.startDate || null,
-      e.createdAt || new Date().toISOString(),
-    ]);
-    eventGroupId = rows[0].id;
-  }
-
-  // Batch upsert all markets
-  const mktValues: any[] = [];
-  const mktPlaceholders: string[] = [];
-  const cols = 35;
-  let pi = 1;
-
-  for (const m of markets) {
-    const baseSlug = m.slug || e.slug;
-    const ph = [];
-    for (let c = 0; c < cols; c++) ph.push(`$${pi++}`);
-    mktPlaceholders.push(`(${ph.join(',')})`);
-    mktValues.push(
-      m.id, m.conditionId || '', m.question,
-      m.groupItemTitle || null, m.description || null,
-      m.category || category, tags,
-      baseSlug, m.image || e.image || null,
-      m.resolutionSource || null,
-      m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
-      m.active !== false, m.closed || false,
-      !!m.closedTime, m.active !== false && !m.closed,
-      m.endDate || e.endDate || null,
-      parseFloat(m.volume) || 0, m.volume24hr || 0,
-      parseFloat(m.liquidity) || 0, e.negRisk || false,
-      eventGroupId,
-      m.bestBid || 0, m.bestAsk || 0,
-      m.spread || 0, m.lastTradePrice || 0,
-      m.oneHourPriceChange || 0, m.oneDayPriceChange || 0,
-      m.oneWeekPriceChange || 0, m.oneMonthPriceChange || 0,
-      m.competitive || 0,
-      m.volume1wk || 0, m.volume1mo || 0,
-      m.submitted_by || null,
-      m.createdAt || e.createdAt || new Date().toISOString(),
-    );
-  }
-
-  let marketRows: any[];
-  try {
-    ({ rows: marketRows } = await pool.query(`
-      INSERT INTO markets (
-        polymarket_id, condition_id, question, group_item_title, description,
-        category, tags, slug, image_url, resolution_source,
-        minimum_tick_size, minimum_order_size,
-        active, closed, resolved, accepting_orders,
-        end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id,
-        best_bid, best_ask, spread, last_trade_price,
-        price_change_1h, price_change_24h, price_change_1w, price_change_1m,
-        competitive, volume_1wk, volume_1mo, submitted_by,
-        created_at
-      ) VALUES ${mktPlaceholders.join(',')}
-      ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
-        question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
-        category = EXCLUDED.category, active = EXCLUDED.active, closed = EXCLUDED.closed,
-        resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
-        volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
-        liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
-        tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id,
-        best_bid = EXCLUDED.best_bid, best_ask = EXCLUDED.best_ask,
-        spread = EXCLUDED.spread, last_trade_price = EXCLUDED.last_trade_price,
-        price_change_1h = EXCLUDED.price_change_1h, price_change_24h = EXCLUDED.price_change_24h,
-        price_change_1w = EXCLUDED.price_change_1w, price_change_1m = EXCLUDED.price_change_1m,
-        competitive = EXCLUDED.competitive, volume_1wk = EXCLUDED.volume_1wk, volume_1mo = EXCLUDED.volume_1mo,
-        submitted_by = EXCLUDED.submitted_by,
-        created_at = EXCLUDED.created_at
-      RETURNING id, polymarket_id
-    `, mktValues));
-  } catch (err: any) {
-    if (err.code === '23505' && err.constraint?.includes('slug')) {
-      marketRows = [];
-      for (const m of markets) {
-        try {
-          const baseSlug = m.slug || e.slug;
-          const { rows } = await pool.query(`
-            INSERT INTO markets (
-              polymarket_id, condition_id, question, group_item_title, description,
-              category, tags, slug, image_url, resolution_source,
-              minimum_tick_size, minimum_order_size,
-              active, closed, resolved, accepting_orders,
-              end_date_iso, volume, volume_24hr, liquidity, neg_risk, event_group_id,
-              best_bid, best_ask, spread, last_trade_price,
-              price_change_1h, price_change_24h, price_change_1w, price_change_1m,
-              competitive, volume_1wk, volume_1mo, submitted_by,
-              created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
-            ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
-              question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
-              category = EXCLUDED.category, active = EXCLUDED.active, closed = EXCLUDED.closed,
-              resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
-              volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
-              liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
-              tags = EXCLUDED.tags, event_group_id = EXCLUDED.event_group_id,
-              best_bid = EXCLUDED.best_bid, best_ask = EXCLUDED.best_ask,
-              spread = EXCLUDED.spread, last_trade_price = EXCLUDED.last_trade_price,
-              price_change_1h = EXCLUDED.price_change_1h, price_change_24h = EXCLUDED.price_change_24h,
-              price_change_1w = EXCLUDED.price_change_1w, price_change_1m = EXCLUDED.price_change_1m,
-              competitive = EXCLUDED.competitive, volume_1wk = EXCLUDED.volume_1wk, volume_1mo = EXCLUDED.volume_1mo,
-              submitted_by = EXCLUDED.submitted_by,
-              created_at = EXCLUDED.created_at
-            RETURNING id, polymarket_id
-          `, [
-            m.id, m.conditionId || '', m.question,
-            m.groupItemTitle || null, m.description || null,
-            m.category || category, tags,
-            `${baseSlug}-${m.id.slice(0, 8)}`, m.image || e.image || null,
-            m.resolutionSource || null,
-            m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
-            m.active !== false, m.closed || false,
-            !!m.closedTime, m.active !== false && !m.closed,
-            m.endDate || e.endDate || null,
-            parseFloat(m.volume) || 0, m.volume24hr || 0,
-            parseFloat(m.liquidity) || 0, e.negRisk || false,
-            eventGroupId,
-            m.bestBid || 0, m.bestAsk || 0,
-            m.spread || 0, m.lastTradePrice || 0,
-            m.oneHourPriceChange || 0, m.oneDayPriceChange || 0,
-            m.oneWeekPriceChange || 0, m.oneMonthPriceChange || 0,
-            m.competitive || 0,
-            m.volume1wk || 0, m.volume1mo || 0,
-            m.submitted_by || null,
-            m.createdAt || e.createdAt || new Date().toISOString(),
-          ]);
-          marketRows.push(rows[0]);
-        } catch { /* skip */ }
-      }
-    } else {
-      throw err;
-    }
-  }
-
-  // Build polymarket_id → db_id map
-  const idMap = new Map<string, string>();
-  for (const row of marketRows) {
-    idMap.set(row.polymarket_id, row.id);
-  }
-
-  // Batch upsert all tokens
-  const tokenValues: any[] = [];
-  const tokenPlaceholders: string[] = [];
-  let tidx = 1;
-
-  for (const m of markets) {
-    const dbId = idMap.get(m.id);
-    if (!dbId) continue;
-
-    const outcomes = parseField(m.outcomes, ['Yes', 'No']);
-    const prices = parseField(m.outcomePrices, []).map(Number);
-    const tokenIds = parseField(m.clobTokenIds, []);
-
-    for (let i = 0; i < outcomes.length; i++) {
-      const tokenId = tokenIds[i] || `${m.id}-${i}`;
-      tokenPlaceholders.push(`($${tidx},$${tidx + 1},$${tidx + 2},$${tidx + 3},$${tidx + 4})`);
-      tokenValues.push(dbId, tokenId, outcomes[i], prices[i] || 0.5, m.groupItemTitle || null);
-      tidx += 5;
-    }
-  }
-
-  if (tokenPlaceholders.length > 0) {
-    try {
-      await pool.query(`
-        INSERT INTO tokens (market_id, token_id, outcome, price, label)
-        VALUES ${tokenPlaceholders.join(',')}
-        ON CONFLICT (market_id, outcome) DO UPDATE SET
-          token_id = EXCLUDED.token_id, price = EXCLUDED.price, label = EXCLUDED.label
-      `, tokenValues);
-    } catch (tokenErr: any) {
-      if (tokenErr.code === '23505') {
-        // Fall back to individual updates
-        for (const m of markets) {
-          const dbId = idMap.get(m.id);
-          if (!dbId) continue;
-          const outcomes = parseField(m.outcomes, ['Yes', 'No']);
-          const prices = parseField(m.outcomePrices, []).map(Number);
-          for (let i = 0; i < outcomes.length; i++) {
-            try {
-              await pool.query(
-                `UPDATE tokens SET price = $1, label = $2 WHERE market_id = $3 AND outcome = $4`,
-                [prices[i] || 0.5, m.groupItemTitle || null, dbId, outcomes[i]]
-              );
-            } catch { /* skip */ }
-          }
-        }
-      }
-    }
-  }
-}
-
-function parseField(val: unknown, fallback: any[]): any[] {
-  if (Array.isArray(val)) return val;
-  if (typeof val === 'string') {
-    try { return JSON.parse(val); } catch { return fallback; }
-  }
-  return fallback;
 }
