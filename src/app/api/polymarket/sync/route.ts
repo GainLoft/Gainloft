@@ -8,11 +8,12 @@ export const preferredRegion = 'sin1';
 export async function GET() {
   try {
     const t0 = Date.now();
-    const [timeResult, marketsResult, groupsResult, tokensResult] = await Promise.all([
+    const [timeResult, marketsResult, groupsResult, tokensResult, sizeResult] = await Promise.all([
       pool.query('SELECT NOW() as time, current_database() as db'),
       pool.query('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE active = true) as active, COUNT(*) FILTER (WHERE closed = true) as closed FROM markets'),
       pool.query('SELECT COUNT(*) as total FROM event_groups'),
       pool.query('SELECT COUNT(*) as total FROM tokens'),
+      pool.query(`SELECT pg_size_pretty(pg_database_size(current_database())) as db_size, pg_database_size(current_database()) as db_size_bytes`),
     ]);
     const readMs = Date.now() - t0;
     return NextResponse.json({
@@ -20,6 +21,7 @@ export async function GET() {
       markets: marketsResult.rows[0],
       event_groups: groupsResult.rows[0],
       tokens: tokensResult.rows[0],
+      storage: sizeResult.rows[0],
     });
   } catch (err) {
     return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 });
