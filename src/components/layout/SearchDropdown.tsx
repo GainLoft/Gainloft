@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import useSWR from 'swr';
+import Image from 'next/image';
 import { Market } from '@/lib/types';
 
 type SearchResult = {
@@ -13,9 +13,7 @@ type SearchResult = {
   category: string;
   image_url: string | null;
   volume: number;
-  /** Yes price for binary markets, null for event groups */
   yesPct: number | null;
-  /** Top outcomes for multi-outcome / event groups */
   outcomes?: { label: string; pct: number }[];
 };
 
@@ -25,41 +23,27 @@ function formatVol(vol: number): string {
   return `$${vol.toFixed(0)}`;
 }
 
-function buildResults(query: string, markets: Market[]): SearchResult[] {
-  const q = query.toLowerCase();
-
-  const results: SearchResult[] = markets
-    .filter(
-      (m) =>
-        m.question.toLowerCase().includes(q) ||
-        m.category.toLowerCase().includes(q) ||
-        m.slug.toLowerCase().includes(q)
-    )
-    .map((m) => {
-      const isMulti = m.tokens.length > 2;
-      const yesToken = m.tokens.find((t) => t.outcome === 'Yes');
-      return {
-        type: 'market' as const,
-        id: m.id,
-        slug: m.slug,
-        title: m.question,
-        category: m.category,
-        image_url: m.image_url,
-        volume: m.volume,
-        yesPct: isMulti ? null : Math.round((yesToken?.price ?? 0.5) * 100),
-        outcomes: isMulti
-          ? m.tokens.slice(0, 3).map((t) => ({
-              label: t.label || t.outcome,
-              pct: Math.round(t.price * 100),
-            }))
-          : undefined,
-      };
-    });
-
-  // Sort by volume desc, cap at 8
-  return results
-    .sort((a, b) => b.volume - a.volume)
-    .slice(0, 8);
+function toResults(markets: Market[]): SearchResult[] {
+  return markets.map((m) => {
+    const isMulti = m.tokens.length > 2;
+    const yesToken = m.tokens.find((t) => t.outcome === 'Yes');
+    return {
+      type: 'market' as const,
+      id: m.id,
+      slug: m.slug,
+      title: m.question,
+      category: m.category,
+      image_url: m.image_url,
+      volume: m.volume,
+      yesPct: isMulti ? null : Math.round((yesToken?.price ?? 0.5) * 100),
+      outcomes: isMulti
+        ? m.tokens.slice(0, 3).map((t) => ({
+            label: t.label || t.outcome,
+            pct: Math.round(t.price * 100),
+          }))
+        : undefined,
+    };
+  });
 }
 
 interface SearchDropdownProps {
@@ -69,15 +53,60 @@ interface SearchDropdownProps {
 }
 
 export default function SearchDropdown({ query, onSelect, activeIndex }: SearchDropdownProps) {
-  // Fetch market data for search (reuses the cached SWR data from the home page)
-  const { data: markets = [] } = useSWR<Market[]>(
-    '/api/polymarket/events?limit=50&order=volume24hr',
-    (url: string) => fetch(url).then(r => r.json()),
-    { refreshInterval: 60000 }
-  );
-  const results = useMemo(() => buildResults(query, markets), [query, markets]);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  if (results.length === 0) {
+  // Debounced server-side search
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setResults([]);
+      return;
+    }
+
+    setLoading(true);
+    const timer = setTimeout(() => {
+      fetch(`/api/polymarket/events?limit=8&search=${encodeURIComponent(trimmed)}&order=volume24hr`)
+        .then((r) => r.json())
+        .then((data: Market[]) => {
+          const arr = Array.isArray(data) ? data : [];
+          setResults(toResults(arr));
+        })
+        .catch(() => setResults([]))
+        .finally(() => setLoading(false));
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  if (loading && results.length === 0) {
+    return (
+      <div
+        className="absolute left-0 right-0 shadow-lg overflow-hidden"
+        style={{
+          top: 'calc(100% + 6px)',
+          borderRadius: 12,
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          zIndex: 200,
+        }}
+      >
+        <div className="flex flex-col gap-2" style={{ padding: 14 }}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="animate-pulse flex items-center" style={{ gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--bg-surface)' }} />
+              <div className="flex-1">
+                <div style={{ width: '70%', height: 14, borderRadius: 4, background: 'var(--bg-surface)' }} />
+                <div style={{ width: '40%', height: 10, borderRadius: 4, background: 'var(--bg-surface)', marginTop: 6 }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (results.length === 0 && !loading) {
     return (
       <div
         className="absolute left-0 right-0 shadow-lg overflow-hidden"
@@ -141,10 +170,13 @@ export default function SearchDropdown({ query, onSelect, activeIndex }: SearchD
               style={{ width: 36, height: 36, borderRadius: 8 }}
             >
               {r.image_url ? (
-                <img
+                <Image
                   src={r.image_url}
                   alt=""
-                  style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 8 }}
+                  width={36}
+                  height={36}
+                  className="object-cover"
+                  style={{ borderRadius: 8 }}
                 />
               ) : (
                 <div
@@ -166,7 +198,7 @@ export default function SearchDropdown({ query, onSelect, activeIndex }: SearchD
               )}
             </div>
 
-            {/* Title + category + outcomes */}
+            {/* Title + category */}
             <div className="flex-1 min-w-0">
               <div
                 className="font-medium truncate"
@@ -181,7 +213,7 @@ export default function SearchDropdown({ query, onSelect, activeIndex }: SearchD
               </div>
             </div>
 
-            {/* Price / outcomes on right */}
+            {/* Price / outcomes */}
             <div className="flex-shrink-0 text-right">
               {r.yesPct !== null ? (
                 <span
