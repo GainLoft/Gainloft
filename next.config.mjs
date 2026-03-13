@@ -38,6 +38,13 @@ const nextConfig = {
       ],
     },
     {
+      // Optimized images: cache in browser for 1 hour
+      source: '/_next/image',
+      headers: [
+        { key: 'Cache-Control', value: 'public, max-age=3600, stale-while-revalidate=86400' },
+      ],
+    },
+    {
       // API responses
       source: '/api/polymarket/:path*',
       headers: [
