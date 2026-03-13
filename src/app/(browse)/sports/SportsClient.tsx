@@ -991,7 +991,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                       }}
                     >
                       <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><LeagueIcon slug={sport.slug} size={16} /></span>
+                        <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SportIcon slug={sport.slug} size={16} /></span>
                         <span>{sport.label}</span>
                       </span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
