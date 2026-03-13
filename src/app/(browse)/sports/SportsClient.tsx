@@ -1097,8 +1097,8 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
             </div>
 
             {/* Mobile sport tabs (below lg) */}
-            <div className="lg:hidden hide-scrollbar" style={{
-              display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 12,
+            <div className="flex lg:hidden hide-scrollbar" style={{
+              gap: 6, overflowX: 'auto', paddingBottom: 12,
               marginBottom: 4, borderBottom: '1px solid var(--border)',
             }}>
               {[
