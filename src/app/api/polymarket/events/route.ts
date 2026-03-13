@@ -26,7 +26,7 @@ const ABBREVIATIONS: Record<string, string[]> = {
  *   - ilike: array of ILIKE patterns for fuzzy substring matching
  *   - tsquery: PostgreSQL full-text search query with stemming
  */
-function buildSearchTerms(raw: string): { ilike: string[]; tsquery: string } {
+function buildSearchTerms(raw: string): { ilike: string[]; tsquery: string; useWordBoundary: boolean } {
   const q = raw.toLowerCase().trim();
   const patterns = new Set<string>([q]);
 
@@ -54,7 +54,12 @@ function buildSearchTerms(raw: string): { ilike: string[]; tsquery: string } {
   }
   const tsquery = tsParts.join(' | ');
 
-  return { ilike: Array.from(patterns), tsquery };
+  // For short terms (<=3 chars), use word-boundary regex instead of ILIKE
+  // to avoid false positives (e.g. "ai" matching "Iran")
+  const ilikeTerms = Array.from(patterns);
+  const useWordBoundary = q.length <= 3 && !ABBREVIATIONS[q];
+
+  return { ilike: ilikeTerms, tsquery, useWordBoundary };
 }
 
 export async function GET(req: Request) {
@@ -113,19 +118,28 @@ export async function GET(req: Request) {
       egParams.push(JSON.stringify([{ slug: tag }]));
     }
     if (search) {
-      const { ilike, tsquery } = buildSearchTerms(search);
+      const { ilike, tsquery, useWordBoundary } = buildSearchTerms(search);
       const clauses: string[] = [];
-      // ILIKE substring matching across all fields + expanded terms
       for (const term of ilike) {
-        clauses.push(`eg.title ILIKE $${ei}`);
-        clauses.push(`eg.slug ILIKE $${ei}`);
-        clauses.push(`eg.description ILIKE $${ei}`);
-        clauses.push(`eg.category ILIKE $${ei}`);
-        clauses.push(`eg.tags::text ILIKE $${ei}`);
-        egParams.push(`%${term}%`);
+        if (useWordBoundary && term === search.toLowerCase().trim()) {
+          // Short raw query: use word-boundary regex to avoid false positives
+          const regex = `\\m${term}\\M`;
+          clauses.push(`eg.title ~* $${ei}`);
+          clauses.push(`eg.slug ~* $${ei}`);
+          clauses.push(`eg.category ~* $${ei}`);
+          clauses.push(`eg.tags::text ~* $${ei}`);
+          egParams.push(regex);
+        } else {
+          clauses.push(`eg.title ILIKE $${ei}`);
+          clauses.push(`eg.slug ILIKE $${ei}`);
+          clauses.push(`eg.description ILIKE $${ei}`);
+          clauses.push(`eg.category ILIKE $${ei}`);
+          clauses.push(`eg.tags::text ILIKE $${ei}`);
+          egParams.push(`%${term}%`);
+        }
         ei++;
       }
-      // Full-text search with stemming (e.g. "elections" matches "election")
+      // Full-text search with stemming
       clauses.push(`to_tsvector('english', coalesce(eg.title,'') || ' ' || coalesce(eg.description,'') || ' ' || coalesce(eg.category,'')) @@ to_tsquery('english', $${ei})`);
       egParams.push(tsquery);
       ei++;
@@ -191,15 +205,24 @@ export async function GET(req: Request) {
       mParams.push(JSON.stringify([{ slug: tag }]));
     }
     if (search) {
-      const { ilike, tsquery } = buildSearchTerms(search);
+      const { ilike, tsquery, useWordBoundary } = buildSearchTerms(search);
       const clauses: string[] = [];
       for (const term of ilike) {
-        clauses.push(`m.question ILIKE $${mi}`);
-        clauses.push(`m.slug ILIKE $${mi}`);
-        clauses.push(`m.description ILIKE $${mi}`);
-        clauses.push(`m.category ILIKE $${mi}`);
-        clauses.push(`m.tags::text ILIKE $${mi}`);
-        mParams.push(`%${term}%`);
+        if (useWordBoundary && term === search.toLowerCase().trim()) {
+          const regex = `\\m${term}\\M`;
+          clauses.push(`m.question ~* $${mi}`);
+          clauses.push(`m.slug ~* $${mi}`);
+          clauses.push(`m.category ~* $${mi}`);
+          clauses.push(`m.tags::text ~* $${mi}`);
+          mParams.push(regex);
+        } else {
+          clauses.push(`m.question ILIKE $${mi}`);
+          clauses.push(`m.slug ILIKE $${mi}`);
+          clauses.push(`m.description ILIKE $${mi}`);
+          clauses.push(`m.category ILIKE $${mi}`);
+          clauses.push(`m.tags::text ILIKE $${mi}`);
+          mParams.push(`%${term}%`);
+        }
         mi++;
       }
       // Full-text search with stemming
