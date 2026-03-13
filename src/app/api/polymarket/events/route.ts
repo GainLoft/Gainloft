@@ -122,7 +122,6 @@ export async function GET(req: Request) {
       const clauses: string[] = [];
       for (const term of ilike) {
         if (useWordBoundary && term === search.toLowerCase().trim()) {
-          // Short raw query: use word-boundary regex to avoid false positives
           const regex = `\\m${term}\\M`;
           clauses.push(`eg.title ~* $${ei}`);
           clauses.push(`eg.slug ~* $${ei}`);
@@ -137,6 +136,14 @@ export async function GET(req: Request) {
           clauses.push(`eg.tags::text ILIKE $${ei}`);
           egParams.push(`%${term}%`);
         }
+        ei++;
+      }
+      // Normalized match: strip punctuation so "pumpfun" matches "Pump.fun"
+      const normalized = search.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+      if (normalized.length >= 3) {
+        clauses.push(`regexp_replace(lower(eg.title), '[^a-z0-9]', '', 'g') ILIKE $${ei}`);
+        clauses.push(`regexp_replace(lower(eg.slug), '[^a-z0-9]', '', 'g') ILIKE $${ei}`);
+        egParams.push(`%${normalized}%`);
         ei++;
       }
       // Full-text search with stemming
@@ -223,6 +230,14 @@ export async function GET(req: Request) {
           clauses.push(`m.tags::text ILIKE $${mi}`);
           mParams.push(`%${term}%`);
         }
+        mi++;
+      }
+      // Normalized match: strip punctuation so "pumpfun" matches "Pump.fun"
+      const normalized = search.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+      if (normalized.length >= 3) {
+        clauses.push(`regexp_replace(lower(m.question), '[^a-z0-9]', '', 'g') ILIKE $${mi}`);
+        clauses.push(`regexp_replace(lower(m.slug), '[^a-z0-9]', '', 'g') ILIKE $${mi}`);
+        mParams.push(`%${normalized}%`);
         mi++;
       }
       // Full-text search with stemming
