@@ -6,62 +6,55 @@ export const preferredRegion = 'sin1';
 
 const SPORTS_TAGS = ['sports', 'games', 'esports'];
 
-// Synonym map: search term → expanded search terms
-const SYNONYMS: Record<string, string[]> = {
-  btc: ['bitcoin', 'btc'],
-  bitcoin: ['bitcoin', 'btc'],
-  eth: ['ethereum', 'eth'],
-  ethereum: ['ethereum', 'eth'],
-  sol: ['solana', 'sol'],
-  solana: ['solana', 'sol'],
-  xrp: ['ripple', 'xrp'],
-  ripple: ['ripple', 'xrp'],
-  doge: ['dogecoin', 'doge'],
-  dogecoin: ['dogecoin', 'doge'],
-  ada: ['cardano', 'ada'],
-  cardano: ['cardano', 'ada'],
-  dot: ['polkadot', 'dot'],
-  polkadot: ['polkadot', 'dot'],
-  bnb: ['binance', 'bnb'],
-  crypto: ['crypto', 'bitcoin', 'ethereum', 'solana', 'cryptocurrency'],
-  ai: ['artificial intelligence', 'ai', 'openai', 'chatgpt', 'gpt'],
-  gpt: ['gpt', 'openai', 'chatgpt', 'artificial intelligence'],
-  trump: ['trump', 'donald trump'],
-  biden: ['biden', 'joe biden'],
-  fed: ['federal reserve', 'fed', 'fomc', 'interest rate'],
-  fomc: ['fomc', 'federal reserve', 'fed', 'interest rate'],
-  rates: ['interest rate', 'rate cut', 'rate hike', 'federal reserve'],
-  inflation: ['inflation', 'cpi', 'consumer price'],
-  cpi: ['cpi', 'inflation', 'consumer price'],
-  gdp: ['gdp', 'gross domestic product', 'economic growth'],
-  nfl: ['nfl', 'football', 'super bowl'],
-  nba: ['nba', 'basketball'],
-  mlb: ['mlb', 'baseball', 'world series'],
-  ufc: ['ufc', 'mma', 'mixed martial arts'],
-  f1: ['formula 1', 'f1', 'grand prix'],
-  epl: ['premier league', 'epl', 'english premier'],
-  ucl: ['champions league', 'ucl', 'uefa champions'],
-  ww3: ['world war', 'ww3', 'nuclear'],
-  uk: ['united kingdom', 'uk', 'britain', 'british'],
-  us: ['united states', 'usa', 'america', 'american'],
-  eu: ['european union', 'eu', 'europe'],
+// Abbreviation map — only things an algorithm can't figure out
+const ABBREVIATIONS: Record<string, string[]> = {
+  btc: ['bitcoin'], eth: ['ethereum'], sol: ['solana'],
+  xrp: ['ripple'], doge: ['dogecoin'], ada: ['cardano'],
+  dot: ['polkadot'], bnb: ['binance'], ai: ['artificial intelligence'],
+  gpt: ['openai', 'chatgpt'], fed: ['federal reserve'],
+  fomc: ['federal reserve'], cpi: ['consumer price index'],
+  gdp: ['gross domestic product'], nfl: ['football'],
+  nba: ['basketball'], mlb: ['baseball'], ufc: ['mixed martial arts'],
+  f1: ['formula 1'], epl: ['premier league'], ucl: ['champions league'],
+  ww3: ['world war'], uk: ['united kingdom'], eu: ['european union'],
+  usa: ['united states'], us: ['united states'],
 };
 
-/** Expand a search query using synonyms, returns array of search terms */
-function expandSearch(raw: string): string[] {
+/**
+ * Expand abbreviations and build PostgreSQL full-text search query.
+ * Returns { ilike: string[], tsquery: string }
+ *   - ilike: array of ILIKE patterns for fuzzy substring matching
+ *   - tsquery: PostgreSQL full-text search query with stemming
+ */
+function buildSearchTerms(raw: string): { ilike: string[]; tsquery: string } {
   const q = raw.toLowerCase().trim();
-  const terms = new Set<string>([q]);
-  // Check if the whole query matches a synonym key
-  if (SYNONYMS[q]) {
-    for (const syn of SYNONYMS[q]) terms.add(syn);
-  }
-  // Check individual words
+  const patterns = new Set<string>([q]);
+
+  // Expand abbreviations
   for (const word of q.split(/\s+/)) {
-    if (SYNONYMS[word]) {
-      for (const syn of SYNONYMS[word]) terms.add(syn);
+    if (ABBREVIATIONS[word]) {
+      for (const expanded of ABBREVIATIONS[word]) patterns.add(expanded);
     }
   }
-  return Array.from(terms);
+  if (ABBREVIATIONS[q]) {
+    for (const expanded of ABBREVIATIONS[q]) patterns.add(expanded);
+  }
+
+  // Build tsquery: each word joined with & (AND), multiple expansions joined with | (OR)
+  const words = q.split(/\s+/).filter(Boolean);
+  const tsWords = words.map(w => `${w}:*`).join(' & ');
+  const tsParts = [tsWords];
+  // Add abbreviation expansions as OR alternatives
+  const patternArr = Array.from(patterns);
+  for (const p of patternArr) {
+    if (p !== q) {
+      const pw = p.split(/\s+/).filter(Boolean).map(w => `${w}:*`).join(' & ');
+      tsParts.push(pw);
+    }
+  }
+  const tsquery = tsParts.join(' | ');
+
+  return { ilike: Array.from(patterns), tsquery };
 }
 
 export async function GET(req: Request) {
@@ -120,18 +113,23 @@ export async function GET(req: Request) {
       egParams.push(JSON.stringify([{ slug: tag }]));
     }
     if (search) {
-      const terms = expandSearch(search);
-      const searchClauses: string[] = [];
-      for (const term of terms) {
-        searchClauses.push(`eg.title ILIKE $${ei}`);
-        searchClauses.push(`eg.slug ILIKE $${ei}`);
-        searchClauses.push(`eg.description ILIKE $${ei}`);
-        searchClauses.push(`eg.category ILIKE $${ei}`);
-        searchClauses.push(`eg.tags::text ILIKE $${ei}`);
+      const { ilike, tsquery } = buildSearchTerms(search);
+      const clauses: string[] = [];
+      // ILIKE substring matching across all fields + expanded terms
+      for (const term of ilike) {
+        clauses.push(`eg.title ILIKE $${ei}`);
+        clauses.push(`eg.slug ILIKE $${ei}`);
+        clauses.push(`eg.description ILIKE $${ei}`);
+        clauses.push(`eg.category ILIKE $${ei}`);
+        clauses.push(`eg.tags::text ILIKE $${ei}`);
         egParams.push(`%${term}%`);
         ei++;
       }
-      egWhere.push(`(${searchClauses.join(' OR ')})`);
+      // Full-text search with stemming (e.g. "elections" matches "election")
+      clauses.push(`to_tsvector('english', coalesce(eg.title,'') || ' ' || coalesce(eg.description,'') || ' ' || coalesce(eg.category,'')) @@ to_tsquery('english', $${ei})`);
+      egParams.push(tsquery);
+      ei++;
+      egWhere.push(`(${clauses.join(' OR ')})`);
     }
 
     egParams.push(fetchLimit);
@@ -193,18 +191,22 @@ export async function GET(req: Request) {
       mParams.push(JSON.stringify([{ slug: tag }]));
     }
     if (search) {
-      const terms = expandSearch(search);
-      const searchClauses: string[] = [];
-      for (const term of terms) {
-        searchClauses.push(`m.question ILIKE $${mi}`);
-        searchClauses.push(`m.slug ILIKE $${mi}`);
-        searchClauses.push(`m.description ILIKE $${mi}`);
-        searchClauses.push(`m.category ILIKE $${mi}`);
-        searchClauses.push(`m.tags::text ILIKE $${mi}`);
+      const { ilike, tsquery } = buildSearchTerms(search);
+      const clauses: string[] = [];
+      for (const term of ilike) {
+        clauses.push(`m.question ILIKE $${mi}`);
+        clauses.push(`m.slug ILIKE $${mi}`);
+        clauses.push(`m.description ILIKE $${mi}`);
+        clauses.push(`m.category ILIKE $${mi}`);
+        clauses.push(`m.tags::text ILIKE $${mi}`);
         mParams.push(`%${term}%`);
         mi++;
       }
-      mWhere.push(`(${searchClauses.join(' OR ')})`);
+      // Full-text search with stemming
+      clauses.push(`to_tsvector('english', coalesce(m.question,'') || ' ' || coalesce(m.description,'') || ' ' || coalesce(m.category,'')) @@ to_tsquery('english', $${mi})`);
+      mParams.push(tsquery);
+      mi++;
+      mWhere.push(`(${clauses.join(' OR ')})`);
     }
 
     mParams.push(fetchLimit);
