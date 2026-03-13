@@ -318,11 +318,11 @@ function reconstructPMEvent(eg: any, marketRows: any[], tokensByMarket?: Record<
     liquidity: parseFloat(eg.liquidity) || 0,
     volume: parseFloat(eg.volume) || 0,
     volume24hr: parseFloat(eg.volume_24hr) || 0,
-    volume1wk: 0,
-    volume1mo: 0,
-    commentCount: 0,
+    volume1wk: parseFloat(eg.volume_1wk) || 0,
+    volume1mo: parseFloat(eg.volume_1mo) || 0,
+    commentCount: parseInt(eg.comment_count) || 0,
     negRisk: eg.neg_risk || false,
-    competitive: 0,
+    competitive: parseFloat(eg.competitive) || 0,
     tags: (eg.tags || []).map((t: any) => ({ id: t.slug, label: t.label, slug: t.slug })),
     markets: marketRows.map((m: any) => {
       // Use actual token prices from DB when available

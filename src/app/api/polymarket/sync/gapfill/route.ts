@@ -1,26 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
-export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 export const preferredRegion = 'sin1';
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
-
-const SPORT_TAGS: { tag: string; quickPages: number }[] = [
-  { tag: 'sports', quickPages: 3 },
-  { tag: 'esports', quickPages: 3 },
-];
-
 const MAX_MARKETS_PER_EVENT = 30;
 
 // Skip auto-generated crypto time-series events
 const CRYPTO_SERIES_RE = /^(btc|eth|sol|xrp|doge|bnb|ada|dot|avax|matic|link|bitcoin|ethereum|solana|dogecoin|cardano|ripple)-(updown|up-or-down|up-down|multistrike)/i;
-function isCryptoSeries(slug: string): boolean {
-  return CRYPTO_SERIES_RE.test(slug);
-}
 
-// Map Polymarket tags to categories when API returns category as None
 const TAG_TO_CATEGORY: Record<string, string> = {
   crypto: 'Crypto', 'crypto-prices': 'Crypto', bitcoin: 'Crypto', ethereum: 'Crypto',
   solana: 'Crypto', defi: 'Crypto', nft: 'Crypto', airdrops: 'Crypto',
@@ -31,6 +20,7 @@ const TAG_TO_CATEGORY: Record<string, string> = {
   culture: 'Culture', music: 'Culture', entertainment: 'Culture',
   geopolitics: 'Geopolitics', climate: 'Climate',
 };
+
 function deriveCategoryFromTags(tagList: { slug: string; label: string }[]): string | null {
   for (const tag of tagList) {
     const mapped = TAG_TO_CATEGORY[tag.slug];
@@ -39,249 +29,310 @@ function deriveCategoryFromTags(tagList: { slug: string; label: string }[]): str
   return null;
 }
 
-export async function GET(req: NextRequest) {
+/**
+ * GET /api/polymarket/sync/gapfill
+ * Returns current gap-fill progress and stats.
+ */
+export async function GET() {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS api_cache (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
+
+    const [cursorResult, statsResult] = await Promise.all([
+      pool.query(`SELECT data FROM api_cache WHERE key = 'gapfill_cursor'`),
+      pool.query(`
+        SELECT
+          COUNT(DISTINCT polymarket_id) FILTER (WHERE polymarket_id IS NOT NULL) as total_events,
+          MAX(CAST(polymarket_id AS INTEGER)) FILTER (WHERE polymarket_id IS NOT NULL AND polymarket_id ~ '^[0-9]+$') as max_id,
+          MIN(CAST(polymarket_id AS INTEGER)) FILTER (WHERE polymarket_id IS NOT NULL AND polymarket_id ~ '^[0-9]+$') as min_id
+        FROM event_groups
+      `),
+    ]);
+
+    const cursor = cursorResult.rows[0]?.data || { offset: 0, completedAt: null, totalSynced: 0, totalChecked: 0 };
+    const stats = statsResult.rows[0];
+
+    return NextResponse.json({
+      cursor,
+      dbStats: {
+        totalEvents: parseInt(stats.total_events) || 0,
+        maxId: parseInt(stats.max_id) || 0,
+        minId: parseInt(stats.min_id) || 0,
+      },
+    });
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/polymarket/sync/gapfill
+ *
+ * Three modes:
+ *
+ * 1. "discover" (default) — Fetch events with order=id, ascending, from stored cursor offset.
+ *    Stable ordering ensures no events are missed. Resumes from last position.
+ *    Body: { mode?: "discover", maxPages?: number, pageSize?: number, resetCursor?: boolean }
+ *
+ * 2. "new" — Fetch only events newer than our max DB ID.
+ *    Fast check for brand new events. Good for frequent polling.
+ *    Body: { mode: "new", maxPages?: number }
+ *
+ * 3. "refresh" — Re-sync top events by volume to update prices/stats.
+ *    Body: { mode: "refresh", limit?: number, category?: string }
+ */
+export async function POST(req: NextRequest) {
   const secret = req.nextUrl.searchParams.get('secret');
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret && secret !== cronSecret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const startTime = Date.now();
-  let totalSynced = 0;
-  let totalSkipped = 0;
-  let totalPages = 0;
-  let totalResolved = 0;
-  let firstError: string | undefined;
-  let gapfillStats: any = {};
-
   try {
-    for (const { tag, quickPages } of SPORT_TAGS) {
-      const pageSize = 50;
-      for (let page = 0; page < quickPages; page++) {
-        try {
-          const sp = new URLSearchParams({
-            tag_slug: tag,
-            limit: String(pageSize),
-            offset: String(page * pageSize),
-            order: 'volume24hr',
-            ascending: 'false',
-            active: 'true',
-          });
-          const res = await fetch(`${GAMMA_API}/events?${sp}`, {
-            cache: 'no-store',
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-          });
-          if (!res.ok) break;
-          const events: any[] = await res.json();
-          if (events.length === 0) break;
+    const body = await req.json().catch(() => ({}));
+    const mode = body.mode || 'discover';
 
-          for (const e of events) {
-            if (isCryptoSeries(e.slug || '')) { totalSkipped++; continue; }
-            try {
-              await upsertEvent(e);
-              totalSynced++;
-            } catch (err) {
-              totalSkipped++;
-              if (!firstError) firstError = `${e.slug}: ${(err as Error).message}`;
-            }
-          }
+    await pool.query(`CREATE TABLE IF NOT EXISTS api_cache (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
 
-          totalPages++;
-          if (events.length < pageSize) break;
-        } catch {
-          break;
-        }
-      }
-    }
+    if (mode === 'discover') return await discoverMode(body);
+    if (mode === 'new') return await newEventsMode(body);
+    if (mode === 'refresh') return await refreshMode(body);
 
-    // Gap-fill: discover new events + refresh top events + incremental sweep
-    try {
-      const baseUrl = process.env.SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
-      if (baseUrl) {
-        const secretParam = cronSecret ? `?secret=${cronSecret}` : '';
-        // 1. Quick check for brand new events (newest IDs)
-        const newRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
-          method: 'POST', cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'new', maxPages: 3 }),
-        }).catch(() => null);
-        if (newRes?.ok) gapfillStats.new = await newRes.json();
-
-        // 2. Refresh top 200 events by volume (updates prices/stats)
-        const refreshRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
-          method: 'POST', cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'refresh', limit: 200 }),
-        }).catch(() => null);
-        if (refreshRes?.ok) gapfillStats.refresh = await refreshRes.json();
-
-        // 3. Incremental gap-fill sweep (10 pages = 1000 events per cron run)
-        const discoverRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
-          method: 'POST', cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'discover', maxPages: 10 }),
-        }).catch(() => null);
-        if (discoverRes?.ok) gapfillStats.discover = await discoverRes.json();
-      }
-    } catch (gfErr) {
-      console.error('Gapfill error:', gfErr);
-    }
-
-    // Resolution sync
-    try {
-      const { rows: activeMarkets } = await pool.query(
-        `SELECT id, polymarket_id FROM markets
-         WHERE polymarket_id IS NOT NULL AND closed = false
-         ORDER BY created_at DESC LIMIT 20`
-      );
-      for (const market of activeMarkets) {
-        try {
-          const res = await fetch(
-            `${GAMMA_API}/markets/${market.polymarket_id}`,
-            { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } }
-          );
-          if (!res.ok) continue;
-          const pm = await res.json();
-          if (pm.closed || !pm.active) {
-            await pool.query(
-              `UPDATE markets SET closed = true, resolved = true, active = false, accepting_orders = false
-               WHERE id = $1`,
-              [market.id]
-            );
-            totalResolved++;
-          }
-        } catch { /* skip */ }
-      }
-    } catch { /* skip */ }
-
-    // Precompute sports cache
-    try {
-      await pool.query(`CREATE TABLE IF NOT EXISTS api_cache (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
-
-      const SPORT_TAGS_LIST = ['sports', 'esports', 'basketball', 'soccer', 'tennis', 'hockey', 'cricket', 'baseball', 'football', 'rugby', 'ufc', 'boxing', 'golf', 'f1', 'chess', 'table-tennis', 'pickleball', 'lacrosse'];
-      const rootCond = SPORT_TAGS_LIST.map(s => `eg.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
-      const rootCondM = SPORT_TAGS_LIST.map(s => `m.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
-
-      // Get event groups and standalone markets in parallel
-      const [egResult, standaloneResult] = await Promise.all([
-        pool.query(`
-          SELECT eg.id, eg.title, eg.slug, eg.description, eg.category, eg.tags,
-            eg.image_url, eg.end_date_iso, eg.volume, eg.volume_24hr, eg.liquidity,
-            eg.neg_risk, eg.created_at, eg.polymarket_id,
-            eg.comment_count, eg.competitive, eg.volume_1wk, eg.volume_1mo,
-            eg.featured, eg.open_interest, eg.start_date
-          FROM event_groups eg
-          WHERE eg.polymarket_id IS NOT NULL AND (${rootCond})
-            AND eg.title ~* 'vs\\.?'
-            AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
-          ORDER BY eg.volume DESC LIMIT 300
-        `),
-        pool.query(`
-          SELECT m.id, m.question, m.slug, m.category, m.tags,
-            m.image_url, m.end_date_iso, m.volume, m.volume_24hr, m.liquidity,
-            m.neg_risk, m.created_at, m.active, m.closed, m.polymarket_id,
-            m.condition_id, m.minimum_tick_size, m.minimum_order_size,
-            m.best_bid, m.best_ask, m.spread, m.last_trade_price,
-            m.price_change_1h, m.price_change_24h, m.price_change_1w, m.price_change_1m,
-            m.competitive, m.volume_1wk, m.volume_1mo, m.submitted_by
-          FROM markets m
-          WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
-            AND (${rootCondM}) AND m.question ~* 'vs\\.?' AND m.closed = false
-          ORDER BY m.volume DESC LIMIT 100
-        `),
-      ]);
-
-      // Load sub-markets for event groups
-      const groupIds = egResult.rows.map((r: any) => r.id);
-      let subMarketRows: any[] = [];
-      if (groupIds.length > 0) {
-        const { rows } = await pool.query(
-          `SELECT m.id, m.event_group_id, m.question, m.group_item_title, m.slug,
-            m.image_url, m.end_date_iso, m.volume, m.volume_24hr, m.liquidity,
-            m.active, m.closed, m.condition_id, m.minimum_tick_size, m.minimum_order_size,
-            m.polymarket_id, m.created_at, m.description,
-            m.best_bid, m.best_ask, m.spread, m.last_trade_price,
-            m.price_change_1h, m.price_change_24h, m.price_change_1w, m.price_change_1m,
-            m.competitive, m.volume_1wk, m.volume_1mo, m.submitted_by
-          FROM markets m WHERE m.event_group_id = ANY($1) AND m.closed = false
-          ORDER BY m.created_at`,
-          [groupIds]
-        );
-        subMarketRows = rows;
-      }
-
-      // Load tokens for all markets
-      const allMarketIds = [
-        ...subMarketRows.map((m: any) => m.id),
-        ...standaloneResult.rows.map((r: any) => r.id),
-      ];
-      let tokenRows: any[] = [];
-      if (allMarketIds.length > 0) {
-        const { rows } = await pool.query(
-          `SELECT market_id, token_id, outcome, price, label FROM tokens WHERE market_id = ANY($1)`,
-          [allMarketIds]
-        );
-        tokenRows = rows;
-      }
-
-      const cacheData = {
-        eventGroups: egResult.rows,
-        standaloneMarkets: standaloneResult.rows,
-        subMarkets: subMarketRows,
-        tokens: tokenRows,
-        cachedAt: new Date().toISOString(),
-      };
-
-      await pool.query(
-        `INSERT INTO api_cache (key, data, updated_at) VALUES ('sports_live', $1::jsonb, NOW())
-         ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
-        [JSON.stringify(cacheData)]
-      );
-    } catch (cacheErr) {
-      console.error('Sports cache precompute error:', cacheErr);
-    }
-
-    // Warm all API caches (Cloudflare + Vercel edge)
-    const baseUrl = process.env.SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
-    if (baseUrl) {
-      const warmUrls = [
-        `${baseUrl}/api/polymarket/sports?tab=live&offset=0&limit=30`,
-        `${baseUrl}/api/polymarket/events?limit=50&order=volume24hr`,
-        `${baseUrl}/api/polymarket/events?limit=100&order=newest`,
-        `${baseUrl}/api/polymarket/breaking`,
-        `${baseUrl}/api/polymarket/taxonomy`,
-        `${baseUrl}/api/polymarket/events/live?tag=politics&limit=100`,
-        `${baseUrl}/api/polymarket/events/live?tag=crypto&limit=100`,
-        `${baseUrl}/api/polymarket/events/live?tag=sports&limit=100`,
-      ];
-      await Promise.allSettled(warmUrls.map(url => fetch(url, { cache: 'no-store' }).catch(() => {})));
-
-      // Warm ISR page caches (triggers revalidation so HTML contains real data)
-      const pageUrls = [
-        `${baseUrl}/`,
-        `${baseUrl}/sports`,
-        `${baseUrl}/breaking`,
-        `${baseUrl}/new`,
-      ];
-      await Promise.allSettled(pageUrls.map(url => fetch(url, { cache: 'no-store' }).catch(() => {})));
-    }
+    return NextResponse.json({ error: `Unknown mode: ${mode}` }, { status: 400 });
   } catch (err) {
-    return NextResponse.json({
-      error: (err as Error).message,
-      totalSynced, totalSkipped, totalPages,
-      duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
-    }, { status: 500 });
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+  }
+}
+
+/**
+ * Discovery mode: Sequential ID-ordered scan of ALL Polymarket events.
+ * Uses a DB-stored cursor to resume across invocations.
+ * Guarantees 100% coverage since IDs are immutable (no pagination drift).
+ */
+async function discoverMode(body: any) {
+  const maxPages = body.maxPages || 50;
+  const pageSize = body.pageSize || 100;
+
+  // Load or reset cursor
+  let cursor: any = { offset: 0, totalSynced: 0, totalChecked: 0, completedAt: null, sweepCount: 0 };
+  if (!body.resetCursor) {
+    const { rows } = await pool.query(`SELECT data FROM api_cache WHERE key = 'gapfill_cursor'`);
+    if (rows[0]) cursor = rows[0].data;
   }
 
+  // Pre-load existing polymarket IDs for skip optimization
+  const { rows: egRows } = await pool.query(`SELECT polymarket_id FROM event_groups WHERE polymarket_id IS NOT NULL`);
+  const { rows: mRows } = await pool.query(`SELECT DISTINCT polymarket_id FROM markets WHERE polymarket_id IS NOT NULL AND event_group_id IS NULL`);
+  const existingIds = new Set<string>();
+  for (const r of egRows) existingIds.add(String(r.polymarket_id));
+  for (const r of mRows) existingIds.add(String(r.polymarket_id));
+
+  let offset = cursor.offset;
+  let synced = 0;
+  let skipped = 0;
+  let existing = 0;
+  let page = 0;
+  let finished = false;
+  let firstError: string | undefined;
+
+  while (page < maxPages) {
+    const sp = new URLSearchParams({
+      limit: String(pageSize),
+      offset: String(offset),
+      order: 'id',
+      ascending: 'true',
+    });
+
+    const res = await fetch(`${GAMMA_API}/events?${sp}`, {
+      cache: 'no-store',
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+
+    if (!res.ok) {
+      firstError = `HTTP ${res.status} at offset ${offset}`;
+      break;
+    }
+
+    const events: any[] = await res.json();
+    if (events.length === 0) {
+      finished = true;
+      break;
+    }
+
+    for (const e of events) {
+      if (CRYPTO_SERIES_RE.test(e.slug || '')) { skipped++; continue; }
+      if (existingIds.has(String(e.id))) { existing++; continue; }
+      try {
+        await upsertEvent(e);
+        synced++;
+        existingIds.add(String(e.id));
+      } catch (err) {
+        skipped++;
+        if (!firstError) firstError = `${e.slug}: ${(err as Error).message}`;
+      }
+    }
+
+    offset += pageSize;
+    page++;
+    if (events.length < pageSize) {
+      finished = true;
+      break;
+    }
+  }
+
+  // Update cursor in DB
+  cursor.offset = finished ? 0 : offset; // Reset to 0 when complete for next sweep
+  cursor.totalSynced = (cursor.totalSynced || 0) + synced;
+  cursor.totalChecked = (cursor.totalChecked || 0) + (synced + skipped + existing);
+  cursor.lastRun = new Date().toISOString();
+  if (finished) {
+    cursor.completedAt = new Date().toISOString();
+    cursor.sweepCount = (cursor.sweepCount || 0) + 1;
+    cursor.offset = 0;
+  }
+
+  await pool.query(
+    `INSERT INTO api_cache (key, data, updated_at) VALUES ('gapfill_cursor', $1::jsonb, NOW())
+     ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
+    [JSON.stringify(cursor)]
+  );
+
   return NextResponse.json({
-    totalSynced, totalSkipped, totalResolved, totalPages,
-    gapfill: gapfillStats,
+    mode: 'discover',
+    synced,
+    skipped,
+    existing,
+    pages: page,
+    finished,
+    cursor: { offset: cursor.offset, totalSynced: cursor.totalSynced, sweepCount: cursor.sweepCount },
     firstError: firstError || null,
-    duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
   });
 }
 
-// ── Upsert logic: 3 queries per event (event_group + batch markets + batch tokens) ──
+/**
+ * New events mode: Quick check for events newer than our max DB ID.
+ * Runs in descending ID order so newest events come first.
+ */
+async function newEventsMode(body: any) {
+  const maxPages = body.maxPages || 5;
+  const pageSize = 100;
+
+  // Get our max polymarket_id
+  const { rows: maxRows } = await pool.query(`
+    SELECT MAX(CAST(polymarket_id AS INTEGER)) as max_id
+    FROM event_groups WHERE polymarket_id IS NOT NULL AND polymarket_id ~ '^[0-9]+$'
+  `);
+  const maxDbId = parseInt(maxRows[0]?.max_id) || 0;
+
+  let synced = 0;
+  let existing = 0;
+  let page = 0;
+  let firstError: string | undefined;
+
+  // Fetch newest events first
+  for (let p = 0; p < maxPages; p++) {
+    const sp = new URLSearchParams({
+      limit: String(pageSize),
+      offset: String(p * pageSize),
+      order: 'id',
+      ascending: 'false',
+      active: 'true',
+    });
+
+    const res = await fetch(`${GAMMA_API}/events?${sp}`, {
+      cache: 'no-store',
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    if (!res.ok) break;
+
+    const events: any[] = await res.json();
+    if (events.length === 0) break;
+
+    let allOld = true;
+    for (const e of events) {
+      const eid = parseInt(e.id);
+      if (eid <= maxDbId) {
+        existing++;
+        continue;
+      }
+      allOld = false;
+      if (CRYPTO_SERIES_RE.test(e.slug || '')) continue;
+      try {
+        await upsertEvent(e);
+        synced++;
+      } catch (err) {
+        if (!firstError) firstError = `${e.slug}: ${(err as Error).message}`;
+      }
+    }
+
+    page++;
+    // Stop early if all events on this page are older than our max
+    if (allOld) break;
+    if (events.length < pageSize) break;
+  }
+
+  return NextResponse.json({
+    mode: 'new',
+    synced,
+    existing,
+    pages: page,
+    maxDbId,
+    firstError: firstError || null,
+  });
+}
+
+/**
+ * Refresh mode: Re-sync top events by volume to update prices/stats.
+ */
+async function refreshMode(body: any) {
+  const limit = body.limit || 200;
+  const category = body.category || null;
+  const pageSize = 100;
+
+  let synced = 0;
+  let firstError: string | undefined;
+  const pages = Math.ceil(limit / pageSize);
+
+  for (let p = 0; p < pages; p++) {
+    const sp = new URLSearchParams({
+      limit: String(pageSize),
+      offset: String(p * pageSize),
+      order: 'volume24hr',
+      ascending: 'false',
+      active: 'true',
+    });
+    if (category) sp.set('tag_slug', category);
+
+    const res = await fetch(`${GAMMA_API}/events?${sp}`, {
+      cache: 'no-store',
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    if (!res.ok) break;
+
+    const events: any[] = await res.json();
+    if (events.length === 0) break;
+
+    for (const e of events) {
+      if (CRYPTO_SERIES_RE.test(e.slug || '')) continue;
+      try {
+        await upsertEvent(e);
+        synced++;
+      } catch (err) {
+        if (!firstError) firstError = `${e.slug}: ${(err as Error).message}`;
+      }
+    }
+
+    if (events.length < pageSize) break;
+  }
+
+  return NextResponse.json({
+    mode: 'refresh',
+    synced,
+    pages,
+    firstError: firstError || null,
+  });
+}
+
+// ── Upsert logic (matches main sync route — 20 cols event_groups, 35 cols markets) ──
 
 async function upsertEvent(e: any) {
   const allMarkets = e.markets || [];
@@ -292,7 +343,6 @@ async function upsertEvent(e: any) {
   const tagList = (e.tags || []).map((t: any) => ({ slug: t.slug, label: t.label }));
   const tags = JSON.stringify(tagList);
 
-  // Derive category from tags when Polymarket returns empty/None category
   const rawCategory = e.category;
   const category = (rawCategory && rawCategory !== 'None')
     ? rawCategory
@@ -334,7 +384,6 @@ async function upsertEvent(e: any) {
     eventGroupId = rows[0].id;
   }
 
-  // Batch upsert all markets
   const mktValues: any[] = [];
   const mktPlaceholders: string[] = [];
   const cols = 35;
@@ -462,13 +511,10 @@ async function upsertEvent(e: any) {
     }
   }
 
-  // Build polymarket_id → db_id map
   const idMap = new Map<string, string>();
-  for (const row of marketRows) {
-    idMap.set(row.polymarket_id, row.id);
-  }
+  for (const row of marketRows) idMap.set(row.polymarket_id, row.id);
 
-  // Batch upsert all tokens
+  // Batch upsert tokens
   const tokenValues: any[] = [];
   const tokenPlaceholders: string[] = [];
   let tidx = 1;
@@ -476,15 +522,12 @@ async function upsertEvent(e: any) {
   for (const m of markets) {
     const dbId = idMap.get(m.id);
     if (!dbId) continue;
-
     const outcomes = parseField(m.outcomes, ['Yes', 'No']);
     const prices = parseField(m.outcomePrices, []).map(Number);
     const tokenIds = parseField(m.clobTokenIds, []);
-
     for (let i = 0; i < outcomes.length; i++) {
-      const tokenId = tokenIds[i] || `${m.id}-${i}`;
       tokenPlaceholders.push(`($${tidx},$${tidx + 1},$${tidx + 2},$${tidx + 3},$${tidx + 4})`);
-      tokenValues.push(dbId, tokenId, outcomes[i], prices[i] || 0.5, m.groupItemTitle || null);
+      tokenValues.push(dbId, tokenIds[i] || `${m.id}-${i}`, outcomes[i], prices[i] || 0.5, m.groupItemTitle || null);
       tidx += 5;
     }
   }
@@ -499,7 +542,6 @@ async function upsertEvent(e: any) {
       `, tokenValues);
     } catch (tokenErr: any) {
       if (tokenErr.code === '23505') {
-        // Fall back to individual updates
         for (const m of markets) {
           const dbId = idMap.get(m.id);
           if (!dbId) continue;
