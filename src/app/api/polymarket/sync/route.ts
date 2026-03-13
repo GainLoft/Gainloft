@@ -72,11 +72,23 @@ export async function POST(req: Request) {
     const sortBy: string = body.order || 'volume24hr';
     const ascending: boolean = body.ascending ?? (sortBy === 'id'); // default ascending for id sort
     const includeInactive: boolean = body.includeInactive || false;
+    const skipExisting: boolean = body.skipExisting || false;
+
+    // Pre-load existing polymarket IDs if skipExisting mode
+    let existingIds: Set<string> | null = null;
+    if (skipExisting) {
+      const { rows: egRows } = await pool.query(`SELECT polymarket_id FROM event_groups WHERE polymarket_id IS NOT NULL`);
+      const { rows: mRows } = await pool.query(`SELECT DISTINCT polymarket_id FROM markets WHERE polymarket_id IS NOT NULL AND event_group_id IS NULL`);
+      existingIds = new Set<string>();
+      for (const r of egRows) existingIds.add(String(r.polymarket_id));
+      for (const r of mRows) existingIds.add(String(r.polymarket_id));
+    }
 
     let offset = startOffset;
     const pageSize = 100;
     let totalSynced = 0;
     let totalSkipped = 0;
+    let totalExisting = 0;
     let page = 0;
     let firstError: string | undefined;
 
@@ -104,6 +116,11 @@ export async function POST(req: Request) {
           totalSkipped++;
           continue;
         }
+        // Skip events already in DB when skipExisting mode
+        if (existingIds && existingIds.has(String(e.id))) {
+          totalExisting++;
+          continue;
+        }
         try {
           await upsertEvent(e);
           totalSynced++;
@@ -118,7 +135,7 @@ export async function POST(req: Request) {
       if (events.length < pageSize) break;
     }
 
-    return NextResponse.json({ synced: totalSynced, skipped: totalSkipped, pages: page, firstError: firstError || null });
+    return NextResponse.json({ synced: totalSynced, skipped: totalSkipped, existing: totalExisting, pages: page, firstError: firstError || null });
   } catch (err) {
     console.error('Sync error:', err);
     return NextResponse.json({ error: 'Sync failed' }, { status: 500 });
