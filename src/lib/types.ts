@@ -30,8 +30,21 @@ export interface Market {
   end_date_iso: string | null;
   volume: number;
   volume_24hr: number;
+  volume_1wk?: number;
+  volume_1mo?: number;
   liquidity: number;
   neg_risk?: boolean;
+  best_bid?: number;
+  best_ask?: number;
+  spread?: number;
+  last_trade_price?: number;
+  price_change_1h?: number;
+  price_change_24h?: number;
+  price_change_1w?: number;
+  price_change_1m?: number;
+  competitive?: number;
+  comment_count?: number;
+  submitted_by?: string;
   created_at: string;
   related_markets?: { id: string; question: string; slug: string; tokens?: Token[]; volume?: number; resolved?: boolean; winning_outcome?: 'Yes' | 'No' | null }[];
 }
@@ -75,7 +88,15 @@ export interface EventGroup {
   image_url: string | null;
   end_date_iso: string | null;
   volume: number;
+  volume_24hr?: number;
+  volume_1wk?: number;
+  volume_1mo?: number;
   liquidity: number;
+  comment_count?: number;
+  competitive?: number;
+  featured?: boolean;
+  open_interest?: number;
+  start_date?: string;
   created_at: string;
   markets: Market[];
   live?: boolean;

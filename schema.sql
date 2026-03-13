@@ -15,6 +15,13 @@ CREATE TABLE IF NOT EXISTS event_groups (
   volume_24hr NUMERIC DEFAULT 0,
   liquidity NUMERIC DEFAULT 0,
   neg_risk BOOLEAN DEFAULT false,
+  comment_count INTEGER DEFAULT 0,
+  competitive NUMERIC DEFAULT 0,
+  volume_1wk NUMERIC DEFAULT 0,
+  volume_1mo NUMERIC DEFAULT 0,
+  featured BOOLEAN DEFAULT false,
+  open_interest NUMERIC DEFAULT 0,
+  start_date TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -48,6 +55,18 @@ CREATE TABLE IF NOT EXISTS markets (
   liquidity NUMERIC DEFAULT 0,
   neg_risk BOOLEAN DEFAULT false,
   event_group_id BIGINT REFERENCES event_groups(id),
+  best_bid NUMERIC DEFAULT 0,
+  best_ask NUMERIC DEFAULT 0,
+  spread NUMERIC DEFAULT 0,
+  last_trade_price NUMERIC DEFAULT 0,
+  price_change_1h NUMERIC DEFAULT 0,
+  price_change_24h NUMERIC DEFAULT 0,
+  price_change_1w NUMERIC DEFAULT 0,
+  price_change_1m NUMERIC DEFAULT 0,
+  competitive NUMERIC DEFAULT 0,
+  volume_1wk NUMERIC DEFAULT 0,
+  volume_1mo NUMERIC DEFAULT 0,
+  submitted_by TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

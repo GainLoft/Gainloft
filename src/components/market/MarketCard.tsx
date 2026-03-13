@@ -78,6 +78,32 @@ function formatVolume(vol: number): string {
   return `$${vol.toFixed(0)}`;
 }
 
+function PriceChangeChip({ change }: { change: number }) {
+  if (!change || Math.abs(change) < 0.001) return null;
+  const pct = (change * 100).toFixed(1);
+  const isUp = change > 0;
+  return (
+    <span
+      className="text-[11px] font-semibold tabular-nums"
+      style={{ color: isUp ? 'var(--yes-green)' : 'var(--no-red)' }}
+    >
+      {isUp ? '▲' : '▼'} {Math.abs(parseFloat(pct))}%
+    </span>
+  );
+}
+
+function CommentCount({ count }: { count: number }) {
+  if (!count) return null;
+  return (
+    <span className="flex items-center text-[12px]" style={{ color: 'var(--text-muted)', gap: 3 }}>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
+      {count >= 1000 ? `${(count / 1000).toFixed(1)}k` : count}
+    </span>
+  );
+}
+
 function MiniGauge({ pct }: { pct: number }) {
   const r = 16;
   const stroke = 4;
@@ -228,11 +254,12 @@ export default function MarketCard({ market }: { market: Market }) {
           </button>
         </div>
 
-        <div className="mt-3 flex items-center text-[12px]" style={{ color: 'var(--text-muted)' }}>
+        <div className="mt-3 flex items-center text-[12px]" style={{ color: 'var(--text-muted)', gap: 8 }}>
           <span className="font-medium">{formatVolume(Number(market.volume))} Vol.</span>
           {seriesInfo.interval && (
-            <span style={{ marginLeft: 8 }}>{seriesInfo.interval}</span>
+            <span>{seriesInfo.interval}</span>
           )}
+          <PriceChangeChip change={market.price_change_24h || 0} />
           {isLive && (
             <span className="ml-auto flex items-center font-semibold" style={{ color: 'var(--no-red)', gap: 4 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--no-red)', display: 'inline-block' }} />
@@ -240,10 +267,8 @@ export default function MarketCard({ market }: { market: Market }) {
             </span>
           )}
           {!isLive && (
-            <div className="ml-auto flex items-center gap-2">
-              <svg className="h-[15px] w-[15px]" style={{ color: 'var(--text-icon)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
-              </svg>
+            <div className="ml-auto flex items-center" style={{ gap: 8 }}>
+              <CommentCount count={market.comment_count || 0} />
               <svg className="h-[15px] w-[15px]" style={{ color: 'var(--text-icon)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
                 <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
               </svg>
@@ -319,12 +344,11 @@ export default function MarketCard({ market }: { market: Market }) {
         </div>
       )}
 
-      <div className="mt-3 flex items-center text-[12px]" style={{ color: 'var(--text-muted)' }}>
+      <div className="mt-3 flex items-center text-[12px]" style={{ color: 'var(--text-muted)', gap: 8 }}>
         <span className="font-medium">{formatVolume(Number(market.volume))} Vol.</span>
-        <div className="ml-auto flex items-center gap-2">
-          <svg className="h-[15px] w-[15px] cursor-pointer transition-colors" style={{ color: 'var(--text-icon)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
-          </svg>
+        <PriceChangeChip change={market.price_change_24h || 0} />
+        <div className="ml-auto flex items-center" style={{ gap: 8 }}>
+          <CommentCount count={market.comment_count || 0} />
           <svg className="h-[15px] w-[15px] cursor-pointer transition-colors" style={{ color: 'var(--text-icon)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
             <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
           </svg>

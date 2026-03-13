@@ -157,7 +157,8 @@ export async function GET(req: Request) {
     const egQuery = `
       SELECT eg.id, eg.title, eg.slug, eg.description, eg.category, eg.tags,
         eg.image_url, eg.end_date_iso, eg.volume, eg.volume_24hr, eg.liquidity,
-        eg.neg_risk, eg.created_at
+        eg.neg_risk, eg.comment_count, eg.competitive, eg.volume_1wk, eg.volume_1mo,
+        eg.featured, eg.open_interest, eg.start_date, eg.created_at
       FROM event_groups eg
       WHERE ${egWhere.join(' AND ')}
       ORDER BY eg.${orderCol} ${orderDir}
@@ -251,7 +252,10 @@ export async function GET(req: Request) {
     const mQuery = `
       SELECT m.id, m.question, m.slug, m.description, m.category, m.tags,
         m.image_url, m.end_date_iso, m.volume, m.volume_24hr, m.liquidity,
-        m.neg_risk, m.created_at, m.active, m.closed, m.resolved, m.winning_outcome
+        m.neg_risk, m.created_at, m.active, m.closed, m.resolved, m.winning_outcome,
+        m.best_bid, m.best_ask, m.spread, m.last_trade_price,
+        m.price_change_1h, m.price_change_24h, m.price_change_1w, m.price_change_1m,
+        m.competitive, m.volume_1wk, m.volume_1mo, m.submitted_by
       FROM markets m
       WHERE ${mWhere.join(' AND ')}
       ORDER BY m.${orderCol} ${orderDir}
@@ -335,7 +339,9 @@ export async function GET(req: Request) {
         resolved_at: null, accepting_orders: g?.meta.active ?? false,
         end_date_iso: eg.end_date_iso || null,
         volume: parseFloat(eg.volume) || 0, volume_24hr: parseFloat(eg.volume_24hr) || 0,
+        volume_1wk: parseFloat(eg.volume_1wk) || 0, volume_1mo: parseFloat(eg.volume_1mo) || 0,
         liquidity: parseFloat(eg.liquidity) || 0, neg_risk: eg.neg_risk || false,
+        comment_count: parseInt(eg.comment_count) || 0, competitive: parseFloat(eg.competitive) || 0,
         created_at: eg.created_at,
       };
     });
@@ -352,7 +358,13 @@ export async function GET(req: Request) {
       resolved_at: null, accepting_orders: row.active,
       end_date_iso: row.end_date_iso || null,
       volume: parseFloat(row.volume) || 0, volume_24hr: parseFloat(row.volume_24hr) || 0,
+      volume_1wk: parseFloat(row.volume_1wk) || 0, volume_1mo: parseFloat(row.volume_1mo) || 0,
       liquidity: parseFloat(row.liquidity) || 0, neg_risk: row.neg_risk || false,
+      best_bid: parseFloat(row.best_bid) || 0, best_ask: parseFloat(row.best_ask) || 0,
+      spread: parseFloat(row.spread) || 0, last_trade_price: parseFloat(row.last_trade_price) || 0,
+      price_change_24h: parseFloat(row.price_change_24h) || 0,
+      competitive: parseFloat(row.competitive) || 0,
+      comment_count: parseInt(row.comment_count) || 0,
       created_at: row.created_at,
     }));
 
