@@ -28,24 +28,25 @@ export async function GET(req: NextRequest) {
     const newRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
       method: 'POST', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'new', maxPages: 10 }),
+      body: JSON.stringify({ mode: 'new', maxPages: 5 }),
     }).catch(() => null);
     if (newRes?.ok) gapfillStats.new = await newRes.json();
 
-    // 2. Refresh top 500 events by volume (updates prices, resolution, closed status)
+    // 2. Refresh top 300 events by volume (updates prices, resolution, closed status)
     const refreshRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
       method: 'POST', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'refresh', limit: 500 }),
+      body: JSON.stringify({ mode: 'refresh', limit: 300 }),
     }).catch(() => null);
     if (refreshRes?.ok) gapfillStats.refresh = await refreshRes.json();
 
-    // 3. Full incremental sweep — 50 pages = 5,000 events per cron run
+    // 3. Full incremental sweep — 20 pages = 2,000 events per cron run
     //    Covers ALL Polymarket events regardless of tags, updates existing ones too
+    //    At ~9,000 total events and 10-min cron interval, full sweep every ~50 minutes
     const discoverRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
       method: 'POST', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'discover', maxPages: 50 }),
+      body: JSON.stringify({ mode: 'discover', maxPages: 20 }),
     }).catch(() => null);
     if (discoverRes?.ok) gapfillStats.discover = await discoverRes.json();
 
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
       const { rows: activeMarkets } = await pool.query(
         `SELECT id, polymarket_id FROM markets
          WHERE polymarket_id IS NOT NULL AND closed = false AND active = true
-         ORDER BY volume DESC LIMIT 200`
+         ORDER BY volume DESC LIMIT 100`
       );
 
       // Batch check resolution via events API (more efficient than per-market)
