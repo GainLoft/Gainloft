@@ -1,7 +1,7 @@
 import NewClient from './NewClient';
 import { Market } from '@/lib/types';
 
-export const revalidate = 300;
+export const revalidate = 60;
 
 async function getNewData(): Promise<Market[]> {
   try {
