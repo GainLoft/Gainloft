@@ -5,6 +5,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Market } from '@/lib/types';
 
+// Tiny 40x40 gray-blue blur placeholder (base64-encoded 1x1 pixel stretched by Next.js)
+const BLUR_PLACEHOLDER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN88P/BfwAJhAPk3KFb1QAAAABJRU5ErkJggg==';
+
 /** Label that truncates with ellipsis and scrolls on hover when overflowing */
 function MarqueeLabel({ text, className, style }: { text: string; className?: string; style?: React.CSSProperties }) {
   const outerRef = useRef<HTMLDivElement>(null);
@@ -172,7 +175,7 @@ export default function MarketCard({ market }: { market: Market }) {
         <div className="flex items-start gap-3">
           <div className="flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-lg overflow-hidden">
             {market.image_url ? (
-              <Image src={market.image_url} alt="" width={40} height={40} className="rounded-lg object-cover" loading="lazy" />
+              <Image src={market.image_url} alt="" width={40} height={40} className="rounded-lg object-cover" loading="lazy" placeholder="blur" blurDataURL={BLUR_PLACEHOLDER} />
             ) : (
               <div className="h-[40px] w-[40px] rounded-lg" style={{ background: 'var(--bg-surface)' }} />
             )}
@@ -243,7 +246,7 @@ export default function MarketCard({ market }: { market: Market }) {
       <div className="flex items-start gap-3">
         <div className="flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-lg overflow-hidden">
           {market.image_url ? (
-            <Image src={market.image_url} alt="" width={40} height={40} className="rounded-lg object-cover" loading="lazy" />
+            <Image src={market.image_url} alt="" width={40} height={40} className="rounded-lg object-cover" loading="lazy" placeholder="blur" blurDataURL={BLUR_PLACEHOLDER} />
           ) : (
             <div className="h-[40px] w-[40px] rounded-lg" style={{ background: 'var(--bg-surface)' }} />
           )}
