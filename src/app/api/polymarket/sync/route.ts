@@ -44,6 +44,25 @@ function isCryptoSeries(slug: string): boolean {
   return CRYPTO_SERIES_RE.test(slug);
 }
 
+// Map Polymarket tags to categories when API returns category as None
+const TAG_TO_CATEGORY: Record<string, string> = {
+  crypto: 'Crypto', 'crypto-prices': 'Crypto', bitcoin: 'Crypto', ethereum: 'Crypto',
+  solana: 'Crypto', defi: 'Crypto', nft: 'Crypto', airdrops: 'Crypto',
+  politics: 'Politics', elections: 'Politics', congress: 'Politics',
+  sports: 'Sports', nba: 'Sports', nfl: 'Sports', mlb: 'Sports', soccer: 'Sports',
+  finance: 'Finance', economy: 'Finance', 'fed-funds': 'Finance',
+  tech: 'Tech', ai: 'Tech', science: 'Science',
+  culture: 'Culture', music: 'Culture', entertainment: 'Culture',
+  geopolitics: 'Geopolitics', climate: 'Climate',
+};
+function deriveCategoryFromTags(tagList: { slug: string; label: string }[]): string | null {
+  for (const tag of tagList) {
+    const mapped = TAG_TO_CATEGORY[tag.slug];
+    if (mapped) return mapped;
+  }
+  return null;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -51,6 +70,7 @@ export async function POST(req: Request) {
     const maxPages: number = body.maxPages || 20;
     const startOffset: number = body.startOffset || 0;
     const sortBy: string = body.order || 'volume24hr';
+    const ascending: boolean = body.ascending ?? (sortBy === 'id'); // default ascending for id sort
     const includeInactive: boolean = body.includeInactive || false;
 
     let offset = startOffset;
@@ -66,7 +86,7 @@ export async function POST(req: Request) {
       sp.set('limit', String(pageSize));
       sp.set('offset', String(offset));
       sp.set('order', sortBy);
-      sp.set('ascending', 'false');
+      sp.set('ascending', String(ascending));
       if (!includeInactive) sp.set('active', 'true');
 
       const res = await fetch(`${GAMMA_API}/events?${sp.toString()}`, {
@@ -114,7 +134,14 @@ async function upsertEvent(e: any) {
 
   const markets = allMarkets.slice(0, MAX_MARKETS_PER_EVENT);
   const isMulti = allMarkets.length > 1 || e.negRisk;
-  const tags = JSON.stringify((e.tags || []).map((t: any) => ({ slug: t.slug, label: t.label })));
+  const tagList = (e.tags || []).map((t: any) => ({ slug: t.slug, label: t.label }));
+  const tags = JSON.stringify(tagList);
+
+  // Derive category from tags when Polymarket returns empty/None category
+  const rawCategory = e.category;
+  const category = (rawCategory && rawCategory !== 'None')
+    ? rawCategory
+    : deriveCategoryFromTags(tagList) || 'General';
 
   let eventGroupId: string | null = null;
 
@@ -131,7 +158,7 @@ async function upsertEvent(e: any) {
       RETURNING id
     `, [
       e.id, e.title, e.slug,
-      e.description || null, e.category || 'General', tags,
+      e.description || null, category, tags,
       e.image || null, e.endDate || null,
       e.volume || 0, e.volume24hr || 0, e.liquidity || 0,
       e.negRisk || false,
@@ -154,7 +181,7 @@ async function upsertEvent(e: any) {
     mktValues.push(
       m.id, m.conditionId || '', m.question,
       m.groupItemTitle || null, m.description || null,
-      m.category || e.category || 'General', tags,
+      m.category || category, tags,
       baseSlug, m.image || e.image || null,
       m.resolutionSource || null,
       m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
@@ -216,7 +243,7 @@ async function upsertEvent(e: any) {
           `, [
             m.id, m.conditionId || '', m.question,
             m.groupItemTitle || null, m.description || null,
-            m.category || e.category || 'General', tags,
+            m.category || category, tags,
             `${baseSlug}-${m.id.slice(0, 8)}`, m.image || e.image || null,
             m.resolutionSource || null,
             m.orderPriceMinTickSize || 0.01, m.orderMinSize || 5,
