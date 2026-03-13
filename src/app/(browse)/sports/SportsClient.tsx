@@ -912,7 +912,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                 background: viewTab === 'live' && !activeFilter ? 'var(--bg-hover)' : 'transparent',
                 color: viewTab === 'live' && !activeFilter ? 'var(--text-primary)' : 'var(--text-secondary)',
               }}>
-                <LiveIcon size={16} />
+                <LiveIcon size={21} />
                 Live
               </button>
 
@@ -925,7 +925,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                 background: viewTab === 'futures' && !activeFilter ? 'var(--bg-hover)' : 'transparent',
                 color: viewTab === 'futures' && !activeFilter ? 'var(--text-primary)' : 'var(--text-secondary)',
               }}>
-                <FuturesIcon size={16} />
+                <FuturesIcon size={21} />
                 Futures
               </button>
 
@@ -955,7 +955,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                     }}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><LeagueIcon slug={league.slug} size={16} /></span>
+                      <span style={{ width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><LeagueIcon slug={league.slug} size={21} /></span>
                       <span style={{ fontWeight: 600 }}>{LABEL_OVERRIDES[league.slug] || league.label}</span>
                     </span>
                     <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>{league.count}</span>
@@ -991,7 +991,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                       }}
                     >
                       <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SportIcon slug={sport.slug} size={16} /></span>
+                        <span style={{ width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SportIcon slug={sport.slug} size={21} /></span>
                         <span>{sport.label}</span>
                       </span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1027,7 +1027,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                               }}
                             >
                               <span style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                                <span style={{ width: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><LeagueIcon slug={league.slug} size={14} /></span>
+                                <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><LeagueIcon slug={league.slug} size={18} /></span>
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {LABEL_OVERRIDES[league.slug] || league.label}
                                 </span>
