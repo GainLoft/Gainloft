@@ -560,7 +560,7 @@ interface SportsClientProps {
 export default function SportsClient({ initialEvents, initialTaxonomy, initialHasMore, initialTotal }: SportsClientProps) {
   const [viewTab, setViewTab] = useState<'live' | 'futures'>('live');
   const [activeFilter, setActiveFilter] = useState<{ type: 'sport' | 'league'; slug: string; sport?: string } | null>(null);
-  const [expandedSports, setExpandedSports] = useState<Set<string>>(() => new Set(initialTaxonomy.map(s => s.slug)));
+  const [expandedSports, setExpandedSports] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
   const [minVolume, setMinVolume] = useState(0);
 
