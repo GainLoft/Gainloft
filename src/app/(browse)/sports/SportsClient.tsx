@@ -976,8 +976,11 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                                 color: isActiveLeague ? 'var(--text-primary)' : 'var(--text-muted)',
                               }}
                             >
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {LABEL_OVERRIDES[league.slug] || league.label}
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                                <span style={{ width: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SportIcon slug={league.slug} size={14} /></span>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {LABEL_OVERRIDES[league.slug] || league.label}
+                                </span>
                               </span>
                               <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', flexShrink: 0, marginLeft: 6 }}>
                                 {league.count}
