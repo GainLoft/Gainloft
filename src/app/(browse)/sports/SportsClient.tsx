@@ -61,6 +61,23 @@ const LABEL_OVERRIDES: Record<string, string> = {
   'japan-j2-league': 'Japan J2 League',
 };
 
+const SIDEBAR_BROWSE = [
+  { href: '/new', label: 'New' },
+  { href: '/breaking', label: 'Breaking' },
+  { href: '/markets', label: 'Markets' },
+];
+
+const SIDEBAR_TOPICS = [
+  { slug: 'politics', label: 'Politics' },
+  { slug: 'crypto', label: 'Crypto' },
+  { slug: 'sports', label: 'Sports' },
+  { slug: 'finance', label: 'Finance' },
+  { slug: 'tech', label: 'Tech' },
+  { slug: 'culture', label: 'Pop Culture' },
+  { slug: 'geopolitics', label: 'Geopolitics' },
+  { slug: 'economy', label: 'Economy' },
+];
+
 const COLOR_MAP: Record<string, string> = {
   LAL: '#552583', BOS: '#007A33', GSW: '#1D428A', DEN: '#0E2240',
   MIA: '#98002E', NYK: '#F58426', PHI: '#006BB6', TOR: '#CE1141',
@@ -469,7 +486,7 @@ interface SportsClientProps {
 export default function SportsClient({ initialEvents, initialTaxonomy, initialHasMore, initialTotal }: SportsClientProps) {
   const [viewTab, setViewTab] = useState<'live' | 'futures'>('live');
   const [activeFilter, setActiveFilter] = useState<{ type: 'sport' | 'league'; slug: string; sport?: string } | null>(null);
-  const [expandedSports, setExpandedSports] = useState<Set<string>>(() => new Set(initialTaxonomy.map(s => s.slug)));
+  const [expandedSports, setExpandedSports] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
   const [minVolume, setMinVolume] = useState(0);
 
@@ -753,16 +770,53 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
       <div style={{ maxWidth: 1350, margin: '0 auto', padding: '0 24px' }}>
         <div style={{ display: 'flex', gap: 8 }}>
 
-          {/* ═══ LEFT SIDEBAR ═══ */}
+          {/* ═══ LEFT SIDEBAR (matches Polymarket: Browse → Topics → Sports) ═══ */}
           <aside className="hidden lg:block" style={{ width: 210, flexShrink: 0, paddingTop: 12 }}>
-            <nav className="hide-scrollbar" style={{ position: 'sticky', top: 68, display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}>
-              {/* Live */}
+            <nav className="hide-scrollbar" style={{ position: 'sticky', top: 68, display: 'flex', flexDirection: 'column', gap: 0, maxHeight: 'calc(100vh - 80px)', overflowY: 'auto', paddingBottom: 24 }}>
+
+              {/* ── Browse ── */}
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.5px', padding: '4px 12px 4px', textTransform: 'uppercase' }}>
+                Browse
+              </div>
+              {SIDEBAR_BROWSE.map((item) => (
+                <Link key={item.href} href={item.href} style={{
+                  display: 'block', padding: '7px 12px', borderRadius: 8,
+                  fontSize: 14, fontWeight: 500, textDecoration: 'none',
+                  color: 'var(--text-secondary)',
+                }}>
+                  {item.label}
+                </Link>
+              ))}
+
+              {/* ── Topics ── */}
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.5px', padding: '14px 12px 4px', textTransform: 'uppercase' }}>
+                Topics
+              </div>
+              {SIDEBAR_TOPICS.map((topic) => {
+                const isCurrent = topic.slug === 'sports';
+                return (
+                  <Link key={topic.slug} href={topic.slug === 'sports' ? '/sports' : `/${topic.slug}`} style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '7px 12px', borderRadius: 8,
+                    fontSize: 14, fontWeight: isCurrent ? 600 : 500, textDecoration: 'none',
+                    background: isCurrent ? 'var(--bg-hover)' : 'transparent',
+                    color: isCurrent ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  }}>
+                    <span style={{ width: 18, height: 18, borderRadius: 4, background: sportColor(topic.slug), flexShrink: 0, opacity: 0.7 }} />
+                    {topic.label}
+                  </Link>
+                );
+              })}
+
+              {/* ── Divider ── */}
+              <div style={{ height: 1, background: 'var(--border)', margin: '12px 12px' }} />
+
+              {/* ── Live ── */}
               <button onClick={() => { setViewTab('live'); setActiveFilter(null); }} style={{
                 display: 'flex', alignItems: 'center', gap: 10,
-                padding: '12px', borderRadius: 8,
+                padding: '8px 12px', borderRadius: 8,
                 fontSize: 14, fontWeight: 600, border: 'none',
                 cursor: 'pointer', textAlign: 'left', width: '100%',
-                letterSpacing: '-0.09px',
                 background: viewTab === 'live' && !activeFilter ? 'var(--bg-hover)' : 'transparent',
                 color: viewTab === 'live' && !activeFilter ? 'var(--text-primary)' : 'var(--text-secondary)',
               }}>
@@ -770,89 +824,102 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                 Live
               </button>
 
-              {/* Futures */}
+              {/* ── Futures ── */}
               <button onClick={() => { setViewTab('futures'); setActiveFilter(null); }} style={{
                 display: 'flex', alignItems: 'center', gap: 10,
-                padding: '12px', borderRadius: 8,
+                padding: '8px 12px', borderRadius: 8,
                 fontSize: 14, fontWeight: 600, border: 'none',
                 cursor: 'pointer', textAlign: 'left', width: '100%',
-                letterSpacing: '-0.09px',
                 background: viewTab === 'futures' && !activeFilter ? 'var(--bg-hover)' : 'transparent',
                 color: viewTab === 'futures' && !activeFilter ? 'var(--text-primary)' : 'var(--text-secondary)',
               }}>
                 Futures
               </button>
 
+              {/* ── Top leagues (quick access, like Polymarket: NBA, NCAAB, UCL, NHL) ── */}
+              {sidebarSubLeagues.slice(0, 4).map((league) => {
+                const isActive = activeFilter?.type === 'league' && activeFilter.slug === league.slug;
+                return (
+                  <button
+                    key={league.slug}
+                    onClick={() => {
+                      setViewTab('live');
+                      if (isActive) setActiveFilter(null);
+                      else setActiveFilter({ type: 'league', slug: league.slug, sport: league.sport });
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 12px', borderRadius: 8, width: '100%',
+                      fontSize: 14, fontWeight: 600, border: 'none',
+                      cursor: 'pointer', textAlign: 'left',
+                      background: isActive ? 'var(--bg-hover)' : 'transparent',
+                      color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    }}
+                  >
+                    <span>{LABEL_OVERRIDES[league.slug] || league.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>{league.count}</span>
+                  </button>
+                );
+              })}
+
+              {/* ── All Sports ── */}
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.5px', padding: '14px 12px 4px', textTransform: 'uppercase' }}>
+                All Sports
+              </div>
+
               {taxonomy.map((sport) => {
-                const isActiveSport = activeFilter?.type === 'sport' && activeFilter.slug === sport.slug;
                 const isActiveLeagueParent = activeFilter?.type === 'league' && activeFilter.sport === sport.slug;
-                const isExpanded = expandedSports.has(sport.slug) || isActiveSport || isActiveLeagueParent;
+                const isExpanded = expandedSports.has(sport.slug) || isActiveLeagueParent;
                 const hasLeagues = sport.leagues.length > 0;
 
                 return (
                   <div key={sport.slug}>
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <button
-                        onClick={() => {
-                          if (isActiveSport) {
-                            setActiveFilter(null);
-                          } else {
-                            setActiveFilter({ type: 'sport', slug: sport.slug });
-                          }
-                        }}
-                        style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          padding: '10px 12px', borderRadius: 8, flex: 1, minWidth: 0,
-                          fontSize: 14, fontWeight: 600, border: 'none',
-                          cursor: 'pointer', textAlign: 'left',
-                          letterSpacing: '-0.09px',
-                          background: isActiveSport ? 'var(--bg-hover)' : 'transparent',
-                          color: (isActiveSport || isActiveLeagueParent) ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        }}
-                      >
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: sportColor(sport.slug), flexShrink: 0 }} />
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sport.label}</span>
-                        </span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', flexShrink: 0, marginLeft: 6 }}>
-                          {sport.count}
-                        </span>
-                      </button>
-                      {hasLeagues && (
-                        <button
-                          onClick={() => toggleExpand(sport.slug)}
-                          style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            width: 28, height: 28, borderRadius: 6, border: 'none', cursor: 'pointer',
-                            background: 'transparent', color: 'var(--text-muted)', flexShrink: 0,
-                            fontSize: 12, transition: 'transform 0.15s',
-                            transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                          }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <button
+                      onClick={() => {
+                        if (hasLeagues) {
+                          toggleExpand(sport.slug);
+                        } else {
+                          const isActive = activeFilter?.type === 'sport' && activeFilter.slug === sport.slug;
+                          if (isActive) setActiveFilter(null);
+                          else { setViewTab('live'); setActiveFilter({ type: 'sport', slug: sport.slug }); }
+                        }
+                      }}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '8px 12px', borderRadius: 8, width: '100%',
+                        fontSize: 14, fontWeight: 500, border: 'none',
+                        cursor: 'pointer', textAlign: 'left',
+                        background: 'transparent',
+                        color: (isExpanded || isActiveLeagueParent) ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      }}
+                    >
+                      <span>{sport.label}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>{sport.count}</span>
+                        {hasLeagues && (
+                          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                            style={{ transition: 'transform 0.15s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                             <path d="M3 4.5L6 7.5L9 4.5" />
                           </svg>
-                        </button>
-                      )}
-                    </div>
+                        )}
+                      </span>
+                    </button>
 
                     {isExpanded && hasLeagues && (
-                      <div style={{ paddingLeft: 28, paddingBottom: 4 }}>
+                      <div style={{ paddingLeft: 16, paddingBottom: 4 }}>
                         {sport.leagues.map((league) => {
                           const isActiveLeague = activeFilter?.type === 'league' && activeFilter.slug === league.slug;
                           return (
                             <button
                               key={league.slug}
                               onClick={() => {
-                                if (isActiveLeague) {
-                                  setActiveFilter(null);
-                                } else {
-                                  setActiveFilter({ type: 'league', slug: league.slug, sport: sport.slug });
-                                }
+                                setViewTab('live');
+                                if (isActiveLeague) setActiveFilter(null);
+                                else setActiveFilter({ type: 'league', slug: league.slug, sport: sport.slug });
                               }}
                               style={{
                                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                padding: '6px 10px', borderRadius: 6, width: '100%',
+                                padding: '5px 10px', borderRadius: 6, width: '100%',
                                 fontSize: 13, fontWeight: 500, border: 'none',
                                 cursor: 'pointer', textAlign: 'left',
                                 background: isActiveLeague ? 'var(--bg-hover)' : 'transparent',
