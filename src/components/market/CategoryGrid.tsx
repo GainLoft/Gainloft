@@ -99,7 +99,7 @@ export default function CategoryGrid({ category, subtag, tag, initialMarkets }: 
 
   if (isLoading) {
     return (
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 pb-8">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-8">
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="rounded-[10px] animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: 190 }} />
         ))}
@@ -117,7 +117,7 @@ export default function CategoryGrid({ category, subtag, tag, initialMarkets }: 
 
   return (
     <>
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 pb-4">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-4">
         {series.map((s) => (
           <SeriesCard key={s.seriesSlug} series={s} />
         ))}
@@ -126,7 +126,7 @@ export default function CategoryGrid({ category, subtag, tag, initialMarkets }: 
         ))}
       </div>
       {loadingMore && (
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 pb-4">
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={`skel-${i}`} className="rounded-[10px] animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: 190 }} />
           ))}
