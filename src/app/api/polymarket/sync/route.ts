@@ -151,7 +151,7 @@ async function upsertEvent(e: any) {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
         title = EXCLUDED.title, slug = EXCLUDED.slug, description = EXCLUDED.description,
-        tags = EXCLUDED.tags, image_url = EXCLUDED.image_url,
+        category = EXCLUDED.category, tags = EXCLUDED.tags, image_url = EXCLUDED.image_url,
         volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
         liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
         created_at = EXCLUDED.created_at
@@ -208,7 +208,7 @@ async function upsertEvent(e: any) {
       ) VALUES ${mktPlaceholders.join(',')}
       ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
         question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
-        active = EXCLUDED.active, closed = EXCLUDED.closed,
+        category = EXCLUDED.category, active = EXCLUDED.active, closed = EXCLUDED.closed,
         resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
         volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
         liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
@@ -233,7 +233,7 @@ async function upsertEvent(e: any) {
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
             ON CONFLICT (polymarket_id) WHERE polymarket_id IS NOT NULL DO UPDATE SET
               question = EXCLUDED.question, group_item_title = EXCLUDED.group_item_title,
-              active = EXCLUDED.active, closed = EXCLUDED.closed,
+              category = EXCLUDED.category, active = EXCLUDED.active, closed = EXCLUDED.closed,
               resolved = EXCLUDED.resolved, accepting_orders = EXCLUDED.accepting_orders,
               volume = EXCLUDED.volume, volume_24hr = EXCLUDED.volume_24hr,
               liquidity = EXCLUDED.liquidity, end_date_iso = EXCLUDED.end_date_iso,
