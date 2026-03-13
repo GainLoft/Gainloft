@@ -633,6 +633,14 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     }
   }, [buildUrl]);
 
+  /* ── Refresh taxonomy on mount (ISR cache may be stale) ── */
+  useEffect(() => {
+    fetch(`/api/polymarket/sports?tab=${viewTab}&offset=0&limit=1`)
+      .then(r => r.json())
+      .then(data => { if (data.taxonomy) setTaxonomy(data.taxonomy); })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── Reset & fetch first page when filters change ── */
   const initialLoadRef = useRef(true);
   useEffect(() => {
