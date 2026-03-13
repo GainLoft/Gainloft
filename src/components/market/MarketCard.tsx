@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { Market } from '@/lib/types';
 
 // Tiny 40x40 gray-blue blur placeholder (base64-encoded 1x1 pixel stretched by Next.js)
-const BLUR_PLACEHOLDER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN88P/BfwAJhAPk3KFb1QAAAABJRU5ErkJggg==';
+const BLUR_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjZTBlMGUwIi8+PC9zdmc+';
 
 /** Label that truncates with ellipsis and scrolls on hover when overflowing */
 function MarqueeLabel({ text, className, style }: { text: string; className?: string; style?: React.CSSProperties }) {
