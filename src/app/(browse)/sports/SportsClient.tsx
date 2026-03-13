@@ -469,7 +469,7 @@ interface SportsClientProps {
 export default function SportsClient({ initialEvents, initialTaxonomy, initialHasMore, initialTotal }: SportsClientProps) {
   const [viewTab, setViewTab] = useState<'live' | 'futures'>('live');
   const [activeFilter, setActiveFilter] = useState<{ type: 'sport' | 'league'; slug: string; sport?: string } | null>(null);
-  const [expandedSports, setExpandedSports] = useState<Set<string>>(new Set());
+  const [expandedSports, setExpandedSports] = useState<Set<string>>(() => new Set(initialTaxonomy.map(s => s.slug)));
   const [filterOpen, setFilterOpen] = useState(false);
   const [minVolume, setMinVolume] = useState(0);
 
@@ -783,40 +783,6 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                 Futures
               </button>
 
-              {/* Top leagues quick-access (like Polymarket: NBA, NCAAB, UCL, NHL) */}
-              {sidebarSubLeagues.map((league) => {
-                const isActiveLeague = activeFilter?.type === 'league' && activeFilter.slug === league.slug;
-                return (
-                  <button
-                    key={league.slug}
-                    onClick={() => {
-                      setViewTab('live');
-                      if (isActiveLeague) setActiveFilter(null);
-                      else setActiveFilter({ type: 'league', slug: league.slug, sport: league.sport });
-                    }}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '10px 12px', borderRadius: 8, width: '100%',
-                      fontSize: 14, fontWeight: 600, border: 'none',
-                      cursor: 'pointer', textAlign: 'left',
-                      letterSpacing: '-0.09px',
-                      background: isActiveLeague ? 'var(--bg-hover)' : 'transparent',
-                      color: isActiveLeague ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    }}
-                  >
-                    <span>{LABEL_OVERRIDES[league.slug] || league.label}</span>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{league.count}</span>
-                  </button>
-                );
-              })}
-
-              <div style={{
-                fontSize: 11, fontWeight: 700, color: 'var(--text-muted)',
-                letterSpacing: '0.25px', padding: '16px 12px 8px', textTransform: 'uppercase',
-              }}>
-                All Sports
-              </div>
-
               {taxonomy.map((sport) => {
                 const isActiveSport = activeFilter?.type === 'sport' && activeFilter.slug === sport.slug;
                 const isActiveLeagueParent = activeFilter?.type === 'league' && activeFilter.sport === sport.slug;
@@ -894,7 +860,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                               }}
                             >
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {league.label}
+                                {LABEL_OVERRIDES[league.slug] || league.label}
                               </span>
                               <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', flexShrink: 0, marginLeft: 6 }}>
                                 {league.count}
