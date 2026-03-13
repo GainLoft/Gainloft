@@ -199,7 +199,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
          AND ${egTagWhere}
          AND eg.title ~* 'vs\\.?'
          AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
-       ORDER BY eg.volume DESC
+       ORDER BY eg.end_date_iso ASC NULLS LAST
        LIMIT 300`,
       tagParams
     ),
@@ -213,7 +213,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
          AND ${mTagWhere}
          AND m.question ~* 'vs\\.?'
          AND m.closed = false
-       ORDER BY m.volume DESC
+       ORDER BY m.end_date_iso ASC NULLS LAST
        LIMIT 100`,
       tagParams
     ),
