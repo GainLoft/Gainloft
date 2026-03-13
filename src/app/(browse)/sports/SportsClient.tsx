@@ -646,32 +646,63 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     return eg.match?.league || 'Sports';
   }, [leagueSlugs, sportSlugs, leagueCounts]);
 
-  /* ── Group matches by date (like Polymarket) ── */
-  const groupedByDate: Record<string, EventGroup[]> = {};
+  /* ── Get parent sport for an event ── */
+  const getSportForEvent = useCallback((eg: EventGroup): string => {
+    const slugs = (eg.tags || []).map(t => t.slug.toLowerCase());
+    for (const s of slugs) {
+      if (sportSlugs.has(s)) return s;
+    }
+    for (const sport of taxonomy) {
+      for (const league of sport.leagues) {
+        if (slugs.includes(league.slug)) return sport.slug;
+      }
+    }
+    return 'sports';
+  }, [sportSlugs, taxonomy]);
+
+  /* ── Sport ordering from taxonomy (already sorted by volume) ── */
+  const sportOrder = useMemo(() => {
+    const order: Record<string, number> = {};
+    taxonomy.forEach((sport, idx) => { order[sport.slug] = idx; });
+    return order;
+  }, [taxonomy]);
+
+  /* ── Group matches: by SPORT on main view, by DATE when filtered (like Polymarket) ── */
+  const isFiltered = !!activeFilter;
+  const grouped: Record<string, EventGroup[]> = {};
+  const groupLabels: Record<string, string> = {};
+
   if (viewTab === 'live') {
     displayEvents.forEach((eg) => {
       if (!eg.match) return;
-      // Include all matches: live + upcoming (not just currently live)
-      const startTime = eg.match.start_time || eg.end_date_iso || eg.created_at;
-      const date = new Date(startTime);
-      // Use local timezone for date grouping
-      const dateKey = date.toLocaleDateString('en-CA'); // YYYY-MM-DD in local tz
-      if (!groupedByDate[dateKey]) groupedByDate[dateKey] = [];
-      groupedByDate[dateKey].push(eg);
+      if (isFiltered) {
+        // Filtered view: group by date
+        const startTime = eg.match.start_time || eg.end_date_iso || eg.created_at;
+        const dateKey = new Date(startTime).toLocaleDateString('en-CA');
+        if (!grouped[dateKey]) { grouped[dateKey] = []; groupLabels[dateKey] = formatDateLabel(dateKey); }
+        grouped[dateKey].push(eg);
+      } else {
+        // Main view: group by sport
+        const sport = getSportForEvent(eg);
+        if (!grouped[sport]) { grouped[sport] = []; groupLabels[sport] = labelMap[sport] || sport; }
+        grouped[sport].push(eg);
+      }
     });
-    // Within each date group: sort by start time ascending
-    for (const key of Object.keys(groupedByDate)) {
-      groupedByDate[key].sort((a, b) => {
+    for (const key of Object.keys(grouped)) {
+      grouped[key].sort((a, b) => {
         const aTime = new Date(a.match!.start_time || a.end_date_iso || '').getTime();
         const bTime = new Date(b.match!.start_time || b.end_date_iso || '').getTime();
         return aTime - bTime;
       });
     }
   }
-  // Sort date groups chronologically
-  const sortedDateKeys = Object.keys(groupedByDate).sort();
 
-  /* ── Top leagues for sidebar sub-items ── */
+  const sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
+    if (!isFiltered) return (sportOrder[a] ?? 999) - (sportOrder[b] ?? 999);
+    return a.localeCompare(b);
+  });
+
+  /* ── Top leagues for sidebar quick-access (like Polymarket: NBA, NCAAB, UCL, NHL at top) ── */
   const sidebarSubLeagues = useMemo(() => {
     const allLeagues: { slug: string; label: string; count: number; sport: string }[] = [];
     for (const sport of taxonomy) {
@@ -725,52 +756,57 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
           {/* ═══ LEFT SIDEBAR ═══ */}
           <aside className="hidden lg:block" style={{ width: 210, flexShrink: 0, paddingTop: 12 }}>
             <nav className="hide-scrollbar" style={{ position: 'sticky', top: 68, display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}>
-              {(['live', 'futures'] as const).map((tab) => {
-                const isActiveTab = viewTab === tab && !activeFilter;
-                const isActiveTabOrLeague = viewTab === tab;
+              {/* Live */}
+              <button onClick={() => { setViewTab('live'); setActiveFilter(null); }} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '12px', borderRadius: 8,
+                fontSize: 14, fontWeight: 600, border: 'none',
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                letterSpacing: '-0.09px',
+                background: viewTab === 'live' && !activeFilter ? 'var(--bg-hover)' : 'transparent',
+                color: viewTab === 'live' && !activeFilter ? 'var(--text-primary)' : 'var(--text-secondary)',
+              }}>
+                <span className="live-pulse" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--no-red, #ef4444)' }} />
+                Live
+              </button>
+
+              {/* Futures */}
+              <button onClick={() => { setViewTab('futures'); setActiveFilter(null); }} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '12px', borderRadius: 8,
+                fontSize: 14, fontWeight: 600, border: 'none',
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                letterSpacing: '-0.09px',
+                background: viewTab === 'futures' && !activeFilter ? 'var(--bg-hover)' : 'transparent',
+                color: viewTab === 'futures' && !activeFilter ? 'var(--text-primary)' : 'var(--text-secondary)',
+              }}>
+                Futures
+              </button>
+
+              {/* Top leagues quick-access (like Polymarket: NBA, NCAAB, UCL, NHL) */}
+              {sidebarSubLeagues.map((league) => {
+                const isActiveLeague = activeFilter?.type === 'league' && activeFilter.slug === league.slug;
                 return (
-                  <div key={tab}>
-                    <button onClick={() => { setViewTab(tab); setActiveFilter(null); }} style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '12px', borderRadius: 8,
+                  <button
+                    key={league.slug}
+                    onClick={() => {
+                      setViewTab('live');
+                      if (isActiveLeague) setActiveFilter(null);
+                      else setActiveFilter({ type: 'league', slug: league.slug, sport: league.sport });
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '10px 12px', borderRadius: 8, width: '100%',
                       fontSize: 14, fontWeight: 600, border: 'none',
-                      cursor: 'pointer', textAlign: 'left', width: '100%',
+                      cursor: 'pointer', textAlign: 'left',
                       letterSpacing: '-0.09px',
-                      background: isActiveTab ? 'var(--bg-hover)' : 'transparent',
-                      color: isActiveTabOrLeague ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    }}>
-                      {tab === 'live' && <span className="live-pulse" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--no-red, #ef4444)' }} />}
-                      {tab === 'live' ? 'Live' : 'Futures'}
-                    </button>
-                    {isActiveTabOrLeague && sidebarSubLeagues.length > 0 && (
-                      <div style={{ paddingLeft: 28, paddingBottom: 4 }}>
-                        {sidebarSubLeagues.map((league) => {
-                          const isActive = activeFilter?.type === 'league' && activeFilter.slug === league.slug;
-                          return (
-                            <button
-                              key={league.slug}
-                              onClick={() => {
-                                setViewTab(tab);
-                                if (isActive) setActiveFilter(null);
-                                else setActiveFilter({ type: 'league', slug: league.slug, sport: league.sport });
-                              }}
-                              style={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                padding: '6px 10px', borderRadius: 6, width: '100%',
-                                fontSize: 13, fontWeight: 500, border: 'none',
-                                cursor: 'pointer', textAlign: 'left',
-                                background: isActive ? 'var(--bg-hover)' : 'transparent',
-                                color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
-                              }}
-                            >
-                              <span>{LABEL_OVERRIDES[league.slug] || league.label}</span>
-                              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{league.count}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                      background: isActiveLeague ? 'var(--bg-hover)' : 'transparent',
+                      color: isActiveLeague ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    }}
+                  >
+                    <span>{LABEL_OVERRIDES[league.slug] || league.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{league.count}</span>
+                  </button>
                 );
               })}
 
@@ -920,6 +956,37 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
               </div>
             </div>
 
+            {/* Mobile sport tabs (below lg) */}
+            <div className="lg:hidden hide-scrollbar" style={{
+              display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 12,
+              marginBottom: 4, borderBottom: '1px solid var(--border)',
+            }}>
+              {[
+                { label: 'Live', active: viewTab === 'live' && !activeFilter, onClick: () => { setViewTab('live'); setActiveFilter(null); } },
+                { label: 'Futures', active: viewTab === 'futures' && !activeFilter, onClick: () => { setViewTab('futures'); setActiveFilter(null); } },
+                ...sidebarSubLeagues.map((l) => ({
+                  label: LABEL_OVERRIDES[l.slug] || l.label,
+                  active: activeFilter?.type === 'league' && activeFilter.slug === l.slug,
+                  onClick: () => { setViewTab('live'); setActiveFilter({ type: 'league', slug: l.slug, sport: l.sport }); },
+                })),
+                ...taxonomy.map((s) => ({
+                  label: s.label,
+                  active: activeFilter?.type === 'sport' && activeFilter.slug === s.slug,
+                  onClick: () => { setViewTab('live'); setActiveFilter({ type: 'sport', slug: s.slug }); },
+                })),
+              ].map((tab, i) => (
+                <button key={i} onClick={tab.onClick} style={{
+                  padding: '6px 14px', borderRadius: 999, whiteSpace: 'nowrap',
+                  fontSize: 13, fontWeight: 600, border: '1px solid var(--border)',
+                  cursor: 'pointer',
+                  background: tab.active ? 'var(--text-primary)' : 'transparent',
+                  color: tab.active ? 'var(--bg)' : 'var(--text-secondary)',
+                }}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
             {isLoading ? (
               <div>{[0, 1, 2].map((i) => <MatchSkeleton key={i} />)}</div>
             ) : isEmpty ? (
@@ -943,24 +1010,31 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
               </>
             ) : (
               <>
-                {sortedDateKeys.map((dateKey) => {
-                  const dateEvents = groupedByDate[dateKey];
-                  const hasLive = dateEvents.some(e => e.match?.status === 'live');
+                {sortedGroupKeys.map((key) => {
+                  const groupEvents = grouped[key];
+                  const label = groupLabels[key] || key;
+                  const hasLive = groupEvents.some(e => e.match?.status === 'live');
                   return (
-                    <div key={dateKey} style={{ marginBottom: 16 }}>
+                    <div key={key} style={{ marginBottom: 16 }}>
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: 8,
                         marginBottom: 8, paddingBottom: 8,
                         borderBottom: '1px solid var(--border)',
                       }}>
-                        {hasLive && (
+                        {!isFiltered && (
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: sportColor(key), flexShrink: 0 }} />
+                        )}
+                        {isFiltered && hasLive && (
                           <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
                         )}
                         <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.18px' }}>
-                          {formatDateLabel(dateKey)}
+                          {label}
+                        </span>
+                        <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>
+                          {groupEvents.length}
                         </span>
                       </div>
-                      {dateEvents.map((event) => (
+                      {groupEvents.map((event) => (
                         <MatchCard
                           key={event.id}
                           event={event}
