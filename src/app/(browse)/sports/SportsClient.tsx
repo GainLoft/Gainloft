@@ -61,23 +61,95 @@ const LABEL_OVERRIDES: Record<string, string> = {
   'japan-j2-league': 'Japan J2 League',
 };
 
-const SPORT_ICON: Record<string, string> = {
-  basketball: '🏀', soccer: '⚽', hockey: '🏒', esports: '🎮',
-  tennis: '🎾', cricket: '🏏', baseball: '⚾', football: '🏈',
-  rugby: '🏉', 'table-tennis': '🏓', ufc: '🥊', boxing: '🥊',
-  golf: '⛳', f1: '🏎️', chess: '♟️', pickleball: '🏓', lacrosse: '🥍',
-  nba: '🏀', ncaab: '🏀', nbl: '🏀', cba: '🏀', 'liga-endesa': '🏀',
-  euroleague: '🏀', 'pro-a': '🏀', kbl: '🏀', lnb: '🏀',
-  nhl: '🏒', khl: '🏒', ahl: '🏒', del: '🏒', shl: '🏒',
-  ucl: '⚽', epl: '⚽', 'la-liga': '⚽', 'serie-a': '⚽',
-  bundesliga: '⚽', 'ligue-1': '⚽', mls: '⚽',
-  'counter-strike-2': '🎮', 'league-of-legends': '🎮', 'dota-2': '🎮',
-  valorant: '🎮', 'honor-of-kings': '🎮', 'rainbow-six': '🎮',
-  atp: '🎾', wta: '🎾', ipl: '🏏',
-  'formula-1': '🏎️', mlb: '⚾',
+/* ── SVG Sport Icons ── */
+const SPORT_PARENT: Record<string, string> = {
+  nba: 'basketball', ncaab: 'basketball', nbl: 'basketball', cba: 'basketball',
+  'liga-endesa': 'basketball', euroleague: 'basketball', 'pro-a': 'basketball',
+  kbl: 'basketball', lnb: 'basketball', wnba: 'basketball', 'march-madness': 'basketball',
+  'nba-playoffs': 'basketball', 'nba-finals': 'basketball',
+  nhl: 'hockey', khl: 'hockey', ahl: 'hockey', del: 'hockey', shl: 'hockey', 'nhl-playoffs': 'hockey',
+  ucl: 'soccer', epl: 'soccer', 'la-liga': 'soccer', 'serie-a': 'soccer',
+  bundesliga: 'soccer', 'ligue-1': 'soccer', mls: 'soccer', 'premier-league': 'soccer',
+  'champions-league': 'soccer', 'europa-league': 'soccer', 'liga-mx': 'soccer',
+  'copa-america': 'soccer', euros: 'soccer', 'world-cup': 'soccer',
+  'saudi-pro-league': 'soccer', concacaf: 'soccer',
+  'counter-strike-2': 'esports', 'league-of-legends': 'esports', 'dota-2': 'esports',
+  valorant: 'esports', 'honor-of-kings': 'esports', 'rainbow-six': 'esports',
+  'call-of-duty': 'esports', overwatch: 'esports', 'rocket-league': 'esports',
+  atp: 'tennis', wta: 'tennis', 'us-open': 'tennis', wimbledon: 'tennis',
+  'french-open': 'tennis', 'australian-open': 'tennis',
+  ipl: 'cricket', 't20-world-cup': 'cricket', 'the-ashes': 'cricket',
+  mlb: 'baseball', npb: 'baseball',
+  nfl: 'football', ncaaf: 'football', xfl: 'football', 'nfl-playoffs': 'football', 'super-bowl': 'football',
+  'six-nations': 'rugby', 'rugby-world-cup': 'rugby', 'super-rugby': 'rugby',
+  pga: 'golf', masters: 'golf', 'us-open-golf': 'golf', 'the-open': 'golf',
+  'formula-1': 'f1', 'f1-race': 'f1',
 };
-function getSportIcon(slug: string): string {
-  return SPORT_ICON[slug] || '🏅';
+
+function SportIcon({ slug, size = 16 }: { slug: string; size?: number }) {
+  const sport = SPORT_PARENT[slug] || slug;
+  const s = size;
+  const props = { width: s, height: s, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+
+  switch (sport) {
+    case 'basketball':
+      return (<svg {...props}><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M3.5 7.5C6 10 9 12 12 12s6-2 8.5-4.5"/><path d="M3.5 16.5C6 14 9 12 12 12s6 2 8.5 4.5"/></svg>);
+    case 'soccer':
+      return (<svg {...props}><circle cx="12" cy="12" r="9"/><path d="M12 3l2.5 4.5h5L16 12l3.5 4.5h-5L12 21l-2.5-4.5h-5L8 12 4.5 7.5h5z"/></svg>);
+    case 'hockey':
+      return (<svg {...props}><path d="M4 20c0-2 2-3 4-3h8c2 0 4 1 4 3"/><path d="M12 17V4"/><circle cx="12" cy="4" r="2" fill="currentColor" stroke="none"/></svg>);
+    case 'esports':
+      return (<svg {...props}><rect x="2" y="6" width="20" height="12" rx="3"/><circle cx="8" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="16" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="14" cy="12" r="1" fill="currentColor" stroke="none"/><path d="M9 18l-1 2"/><path d="M15 18l1 2"/></svg>);
+    case 'tennis':
+      return (<svg {...props}><circle cx="12" cy="12" r="9"/><path d="M5 3c2.5 4 2.5 14 0 18"/><path d="M19 3c-2.5 4-2.5 14 0 18"/></svg>);
+    case 'cricket':
+      return (<svg {...props}><path d="M5 19L16 8"/><circle cx="18" cy="6" r="2"/><path d="M3 21l2-2"/><path d="M14 10l-2 2"/></svg>);
+    case 'baseball':
+      return (<svg {...props}><circle cx="12" cy="12" r="9"/><path d="M6.3 4.2c1.5 2.5 1.5 5.5.5 8s-3 4.5-5 5.5"/><path d="M17.7 19.8c-1.5-2.5-1.5-5.5-.5-8s3-4.5 5-5.5"/></svg>);
+    case 'football':
+      return (<svg {...props}><ellipse cx="12" cy="12" rx="9" ry="5" transform="rotate(-30 12 12)"/><path d="M12 8v8"/><path d="M9 9.5l3 1.5 3-1.5"/><path d="M9 14.5l3-1.5 3 1.5"/></svg>);
+    case 'rugby':
+      return (<svg {...props}><ellipse cx="12" cy="12" rx="9" ry="5" transform="rotate(-30 12 12)"/><path d="M12 7v10"/></svg>);
+    case 'ufc':
+    case 'boxing':
+      return (<svg {...props}><path d="M18 5h-2a4 4 0 0 0-4 4v2"/><path d="M6 5h2a4 4 0 0 1 4 4v2"/><path d="M6 5V4"/><path d="M18 5V4"/><rect x="5" y="11" width="14" height="9" rx="4"/></svg>);
+    case 'golf':
+      return (<svg {...props}><path d="M12 18V3"/><path d="M12 3l7 4-7 4"/><circle cx="12" cy="20" r="2" fill="currentColor" stroke="none"/></svg>);
+    case 'f1':
+      return (<svg {...props}><path d="M4 20V4h4l-2 8h6l2-8h4v16"/><path d="M4 12h16"/></svg>);
+    case 'chess':
+      return (<svg {...props}><path d="M9 2h6v3l-2 1v3h2l2 5H7l2-5h2V6L9 5z"/><path d="M7 14v2c0 1 1 2 2 2h6c1 0 2-1 2-2v-2"/><path d="M6 18h12v2H6z"/></svg>);
+    case 'table-tennis':
+    case 'pickleball':
+      return (<svg {...props}><circle cx="10" cy="10" r="7"/><path d="M15 15l5 5"/><circle cx="19" cy="5" r="2" fill="currentColor" stroke="none"/></svg>);
+    case 'lacrosse':
+      return (<svg {...props}><path d="M6 20L18 4"/><path d="M18 4c-2 0-4 1-5 3s-1 4.5 0 6"/><circle cx="7" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg>);
+    default:
+      return (<svg {...props}><circle cx="12" cy="8" r="5"/><path d="M12 13v3"/><path d="M8 21h8"/><path d="M12 16l-4 5"/><path d="M12 16l4 5"/></svg>);
+  }
+}
+
+function LiveIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.9 19.1A10 10 0 0 1 2 12c0-2.8 1.1-5.3 2.9-7.1"/>
+      <path d="M8.1 15.9A5 5 0 0 1 7 12c0-1.4.6-2.7 1.5-3.5"/>
+      <path d="M15.9 15.9A5 5 0 0 0 17 12c0-1.4-.6-2.7-1.5-3.5"/>
+      <path d="M19.1 19.1A10 10 0 0 0 22 12c0-2.8-1.1-5.3-2.9-7.1"/>
+      <circle cx="12" cy="12" r="1" fill="currentColor"/>
+    </svg>
+  );
+}
+
+function FuturesIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2"/>
+      <path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>
+      <path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/>
+      <path d="M8 18h.01"/><path d="M12 18h.01"/>
+    </svg>
+  );
 }
 
 const COLOR_MAP: Record<string, string> = {
@@ -785,7 +857,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                 background: viewTab === 'live' && !activeFilter ? 'var(--bg-hover)' : 'transparent',
                 color: viewTab === 'live' && !activeFilter ? 'var(--text-primary)' : 'var(--text-secondary)',
               }}>
-                <span style={{ fontSize: 16 }}>📡</span>
+                <LiveIcon size={16} />
                 Live
               </button>
 
@@ -798,7 +870,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                 background: viewTab === 'futures' && !activeFilter ? 'var(--bg-hover)' : 'transparent',
                 color: viewTab === 'futures' && !activeFilter ? 'var(--text-primary)' : 'var(--text-secondary)',
               }}>
-                <span style={{ fontSize: 16 }}>📅</span>
+                <FuturesIcon size={16} />
                 Futures
               </button>
 
@@ -828,7 +900,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                     }}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 15, width: 20, textAlign: 'center', flexShrink: 0 }}>{getSportIcon(league.slug)}</span>
+                      <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SportIcon slug={league.slug} size={16} /></span>
                       <span style={{ fontWeight: 600 }}>{LABEL_OVERRIDES[league.slug] || league.label}</span>
                     </span>
                     <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>{league.count}</span>
@@ -864,7 +936,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                       }}
                     >
                       <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 15, width: 20, textAlign: 'center', flexShrink: 0 }}>{getSportIcon(sport.slug)}</span>
+                        <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SportIcon slug={sport.slug} size={16} /></span>
                         <span>{sport.label}</span>
                       </span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
