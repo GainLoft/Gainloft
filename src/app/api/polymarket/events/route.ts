@@ -162,7 +162,7 @@ export async function GET(req: Request) {
         eg.featured, eg.open_interest, eg.start_date, eg.created_at
       FROM event_groups eg
       WHERE ${egWhere.join(' AND ')}
-      ORDER BY ${orderCol === 'start_date' ? 'COALESCE(eg.start_date, eg.created_at)' : `eg.${orderCol}`} ${orderDir}
+      ORDER BY ${orderCol === 'start_date' ? 'COALESCE(eg.start_date, eg.created_at::text)' : `eg.${orderCol}`} ${orderDir}
       LIMIT $${ei}
     `;
 
