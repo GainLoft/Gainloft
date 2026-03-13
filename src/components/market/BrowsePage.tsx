@@ -469,7 +469,7 @@ export default function BrowsePage({ title, markets, filterTags, subcategories }
             <div className={
               hasSidebar
                 ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3'
-                : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3'
+                : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3'
             }>
               {sorted.map((market) => (
                 <MarketCard key={market.id} market={market} />

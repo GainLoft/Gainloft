@@ -82,14 +82,14 @@ export default function NewClient({ initialMarkets = [] }: { initialMarkets?: Ma
       <p className="mb-6" style={{ color: 'var(--text-muted)', fontSize: 14 }}>Recently created prediction markets</p>
 
       {!initialLoaded && markets.length === 0 ? (
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-8">
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 pb-8">
           {Array.from({ length: 9 }).map((_, i) => (
             <div key={i} className="rounded-[10px] animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: 190 }} />
           ))}
         </div>
       ) : (
         <>
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-8">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 pb-8">
             {liveMarkets.map((market) => (
               <MarketCard key={market.id} market={market} />
             ))}
@@ -99,7 +99,7 @@ export default function NewClient({ initialMarkets = [] }: { initialMarkets?: Ma
           <div ref={sentinelRef} style={{ height: 1 }} />
 
           {loading && (
-            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-8">
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 pb-8">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="rounded-[10px] animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: 190 }} />
               ))}

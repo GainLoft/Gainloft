@@ -133,7 +133,7 @@ export default function SubcategoryPage({ parentCategory, parentLabel, parentTag
       </p>
 
       {isLoading ? (
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 pb-8">
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 pb-8">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="rounded-[10px] animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: 190 }} />
           ))}
@@ -144,7 +144,7 @@ export default function SubcategoryPage({ parentCategory, parentLabel, parentTag
         </div>
       ) : (
         <>
-          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {markets.map((market) => (
               <MarketCard key={market.id} market={market} />
             ))}
@@ -152,7 +152,7 @@ export default function SubcategoryPage({ parentCategory, parentLabel, parentTag
 
           {/* Loading more skeletons */}
           {loadingMore && (
-            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mt-3">
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 mt-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={`skeleton-${i}`} className="rounded-[10px] animate-pulse" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: 190 }} />
               ))}
