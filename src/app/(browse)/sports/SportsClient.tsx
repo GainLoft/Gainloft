@@ -61,6 +61,56 @@ const LABEL_OVERRIDES: Record<string, string> = {
   'japan-j2-league': 'Japan J2 League',
 };
 
+/* ── League logo PNGs (scraped from Polymarket) ── */
+const LEAGUE_LOGO: Record<string, string> = {
+  // Basketball
+  nba: '/images/sports/nba.png', ncaab: '/images/sports/cbb.png', 'march-madness': '/images/sports/cbb.png',
+  'nba-playoffs': '/images/sports/nba.png', 'nba-finals': '/images/sports/nba.png', wnba: '/images/sports/nba.png',
+  basketball: '/images/sports/nba.png',
+  // Soccer
+  epl: '/images/sports/epl.png', 'premier-league': '/images/sports/epl.png',
+  'la-liga': '/images/sports/laliga.png', 'serie-a': '/images/sports/sea.png',
+  mls: '/images/sports/mls.png', ucl: '/images/sports/ucl.png', 'champions-league': '/images/sports/ucl.png',
+  soccer: '/images/sports/soccer.png',
+  // Hockey
+  nhl: '/images/sports/nhl.png', 'nhl-playoffs': '/images/sports/nhl.png',
+  hockey: '/images/sports/nhl.png',
+  // Esports
+  esports: '/images/sports/esports.png', 'counter-strike-2': '/images/sports/esports.png',
+  'league-of-legends': '/images/sports/esports.png', 'dota-2': '/images/sports/esports.png',
+  valorant: '/images/sports/esports.png', 'honor-of-kings': '/images/sports/esports.png',
+  'call-of-duty': '/images/sports/esports.png',
+  // Football
+  nfl: '/images/sports/nfl.png', 'nfl-playoffs': '/images/sports/nfl.png',
+  'super-bowl': '/images/sports/nfl.png', football: '/images/sports/football.png',
+  // Others
+  ufc: '/images/sports/ufc.png', boxing: '/images/sports/boxing.png',
+  golf: '/images/sports/golf.png', pga: '/images/sports/golf.png',
+  f1: '/images/sports/f1.png', 'formula-1': '/images/sports/f1.png',
+  chess: '/images/sports/chess.png', pickleball: '/images/sports/pickleball.png',
+  mlb: '/images/sports/mlb.png', baseball: '/images/sports/mlb.png',
+  tennis: '/images/sports/tennis.png', atp: '/images/sports/tennis.png', wta: '/images/sports/tennis.png',
+  cricket: '/images/sports/cricket.png', ipl: '/images/sports/cricket.png',
+  rugby: '/images/sports/boxing.png', 'six-nations': '/images/sports/boxing.png',
+};
+
+function LeagueIcon({ slug, size = 16 }: { slug: string; size?: number }) {
+  const logo = LEAGUE_LOGO[slug];
+  if (logo) {
+    return (
+      <img
+        src={logo}
+        alt=""
+        width={size}
+        height={size}
+        style={{ width: size, height: size, borderRadius: 4, objectFit: 'cover' }}
+        loading="lazy"
+      />
+    );
+  }
+  return <SportIcon slug={slug} size={size} />;
+}
+
 /* ── SVG Sport Icons ── */
 const SPORT_PARENT: Record<string, string> = {
   nba: 'basketball', ncaab: 'basketball', nbl: 'basketball', cba: 'basketball',
@@ -905,7 +955,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                     }}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SportIcon slug={league.slug} size={16} /></span>
+                      <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><LeagueIcon slug={league.slug} size={16} /></span>
                       <span style={{ fontWeight: 600 }}>{LABEL_OVERRIDES[league.slug] || league.label}</span>
                     </span>
                     <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>{league.count}</span>
@@ -941,7 +991,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                       }}
                     >
                       <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SportIcon slug={sport.slug} size={16} /></span>
+                        <span style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><LeagueIcon slug={sport.slug} size={16} /></span>
                         <span>{sport.label}</span>
                       </span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -977,7 +1027,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                               }}
                             >
                               <span style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                                <span style={{ width: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SportIcon slug={league.slug} size={14} /></span>
+                                <span style={{ width: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><LeagueIcon slug={league.slug} size={14} /></span>
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {LABEL_OVERRIDES[league.slug] || league.label}
                                 </span>
