@@ -77,7 +77,8 @@ export async function GET(req: Request) {
   const isSportsCategory = tag ? SPORTS_TAGS.includes(tag) : false;
 
   try {
-    const orderCol = order === 'newest' ? 'created_at' : order === 'volume' ? 'volume' : order === 'liquidity' ? 'liquidity' : 'volume_24hr';
+    // Polymarket's "new" page sorts by start_date (when market went live), not created_at
+    const orderCol = order === 'newest' ? 'start_date' : order === 'volume' ? 'volume' : order === 'liquidity' ? 'liquidity' : 'volume_24hr';
     const orderDir = order === 'endDate' ? 'ASC NULLS LAST' : 'DESC';
     const fetchLimit = limit + offset;
 
@@ -161,7 +162,7 @@ export async function GET(req: Request) {
         eg.featured, eg.open_interest, eg.start_date, eg.created_at
       FROM event_groups eg
       WHERE ${egWhere.join(' AND ')}
-      ORDER BY eg.${orderCol} ${orderDir}
+      ORDER BY ${orderCol === 'start_date' ? 'COALESCE(eg.start_date, eg.created_at)' : `eg.${orderCol}`} ${orderDir}
       LIMIT $${ei}
     `;
 
@@ -258,7 +259,7 @@ export async function GET(req: Request) {
         m.competitive, m.volume_1wk, m.volume_1mo, m.submitted_by
       FROM markets m
       WHERE ${mWhere.join(' AND ')}
-      ORDER BY m.${orderCol} ${orderDir}
+      ORDER BY m.${orderCol === 'start_date' ? 'created_at' : orderCol} ${orderDir}
       LIMIT $${mi}
     `;
 
@@ -342,7 +343,7 @@ export async function GET(req: Request) {
         volume_1wk: parseFloat(eg.volume_1wk) || 0, volume_1mo: parseFloat(eg.volume_1mo) || 0,
         liquidity: parseFloat(eg.liquidity) || 0, neg_risk: eg.neg_risk || false,
         comment_count: parseInt(eg.comment_count) || 0, competitive: parseFloat(eg.competitive) || 0,
-        created_at: eg.created_at,
+        created_at: eg.start_date || eg.created_at,
       };
     });
 
