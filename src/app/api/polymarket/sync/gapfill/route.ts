@@ -122,9 +122,17 @@ async function discoverMode(body: any) {
     if (rows[0]) cursor = rows[0].data;
   }
 
+  // Pre-load existing IDs to skip (discover focuses on NEW events; refresh handles updates)
+  const { rows: egRows } = await pool.query(`SELECT polymarket_id FROM event_groups WHERE polymarket_id IS NOT NULL`);
+  const { rows: mRows } = await pool.query(`SELECT DISTINCT polymarket_id FROM markets WHERE polymarket_id IS NOT NULL AND event_group_id IS NULL`);
+  const existingIds = new Set<string>();
+  for (const r of egRows) existingIds.add(String(r.polymarket_id));
+  for (const r of mRows) existingIds.add(String(r.polymarket_id));
+
   let offset = cursor.offset;
   let synced = 0;
   let skipped = 0;
+  let existing = 0;
   let page = 0;
   let finished = false;
   let firstError: string | undefined;
@@ -155,9 +163,11 @@ async function discoverMode(body: any) {
 
     for (const e of events) {
       if (CRYPTO_SERIES_RE.test(e.slug || '')) { skipped++; continue; }
+      if (existingIds.has(String(e.id))) { existing++; continue; }
       try {
         await upsertEvent(e);
         synced++;
+        existingIds.add(String(e.id));
       } catch (err) {
         skipped++;
         if (!firstError) firstError = `${e.slug}: ${(err as Error).message}`;
@@ -175,7 +185,7 @@ async function discoverMode(body: any) {
   // Update cursor
   cursor.offset = finished ? 0 : offset;
   cursor.totalSynced = (cursor.totalSynced || 0) + synced;
-  cursor.totalChecked = (cursor.totalChecked || 0) + (synced + skipped);
+  cursor.totalChecked = (cursor.totalChecked || 0) + (synced + skipped + existing);
   cursor.lastRun = new Date().toISOString();
   if (finished) {
     cursor.completedAt = new Date().toISOString();
@@ -191,7 +201,7 @@ async function discoverMode(body: any) {
 
   return NextResponse.json({
     mode: 'discover',
-    synced, skipped, pages: page, finished,
+    synced, skipped, existing, pages: page, finished,
     cursor: { offset: cursor.offset, totalSynced: cursor.totalSynced, sweepCount: cursor.sweepCount },
     firstError: firstError || null,
   });
