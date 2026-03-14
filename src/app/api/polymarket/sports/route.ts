@@ -153,51 +153,70 @@ function isPlaceholderMarket(pm: PMMarket): boolean {
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 
-/** Fetch live sports directly from Polymarket's Gamma API (real-time, same data as polymarket.com/sports) */
+/** Fetch live sports directly from Polymarket's Gamma API using event_date + live params (same data source as polymarket.com/sports) */
 async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
   try {
     const now = new Date();
-    const minEnd = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString();
-    const SPORT_TAGS = [
-      'sports', 'soccer', 'basketball', 'tennis', 'cricket', 'hockey',
-      'rugby', 'ufc', 'boxing', 'baseball', 'football', 'golf',
-      'table-tennis', 'counter-strike-2', 'dota-2', 'league-of-legends',
-      'honor-of-kings', 'valorant', 'rainbow-six-siege',
-    ];
-    const fetchTag = (tag: string) => {
-      const p = new URLSearchParams({
-        active: 'true', closed: 'false', tag_slug: tag,
-        order: 'endDate', ascending: 'true',
-        end_date_min: minEnd, limit: '30',
-      });
-      return fetch(`${GAMMA_API}/events?${p}`, {
-        cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(8000),
-      }).then(r => r.ok ? r.json() : []).catch(() => []);
+    const today = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const tomorrow = new Date(now.getTime() + 86400000).toISOString().split('T')[0];
+
+    const fetchPage = async (params: Record<string, string>): Promise<PMEvent[]> => {
+      const p = new URLSearchParams(params);
+      try {
+        const res = await fetch(`${GAMMA_API}/events?${p}`, {
+          cache: 'no-store',
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(8000),
+        });
+        return res.ok ? await res.json() : [];
+      } catch { return []; }
     };
 
-    const results = await Promise.all(SPORT_TAGS.map(fetchTag));
-    const allFetched: PMEvent[] = results.flat();
+    // Gamma API caps at 10 events per page — paginate in parallel
+    const liveOffsets = [0, 10, 20, 30, 40]; // up to 50 live events
+    const todayOffsets = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]; // up to 100 today events
+    const tomorrowOffsets = [0, 10, 20]; // up to 30 tomorrow events
 
-    if (allFetched.length === 0) return null;
+    const allRequests = [
+      // Live events (guaranteed to match polymarket.com/sports live section)
+      ...liveOffsets.map(o => fetchPage({ closed: 'false', live: 'true', limit: '10', offset: String(o) })),
+      // Today's events (includes live + upcoming for today)
+      ...todayOffsets.map(o => fetchPage({ closed: 'false', event_date: today, limit: '10', offset: String(o) })),
+      // Tomorrow's events
+      ...tomorrowOffsets.map(o => fetchPage({ closed: 'false', event_date: tomorrow, limit: '10', offset: String(o) })),
+    ];
 
-    // Deduplicate by ID
+    const results = await Promise.all(allRequests);
+
+    // Track which events are confirmed live
+    const liveResults = results.slice(0, liveOffsets.length).flat();
+    const liveIds = new Set(liveResults.map(ev => ev.id));
+
+    // Deduplicate: live events first, then today, then tomorrow
     const seen = new Set<string>();
     const allEvents: PMEvent[] = [];
-    for (const ev of allFetched) {
-      if (seen.has(ev.id)) continue;
-      seen.add(ev.id);
-      if (!/vs\.?/i.test(ev.title)) continue;
-      allEvents.push(ev);
+    for (const ev of liveResults) {
+      if (!seen.has(ev.id)) { seen.add(ev.id); allEvents.push(ev); }
     }
+    for (const ev of results.slice(liveOffsets.length).flat()) {
+      if (!seen.has(ev.id)) { seen.add(ev.id); allEvents.push(ev); }
+    }
+
+    if (allEvents.length === 0) return null;
 
     // Process through existing pipeline
     const rawEvents: EventGroup[] = [];
     for (const ev of allEvents) {
       if (ev.closed) continue;
+      if (!/vs\.?/i.test(ev.title)) continue;
       if (isMatchSettled(ev)) continue;
       const matchInfo = buildMatchInfo(ev);
       if (!matchInfo || matchInfo.status === 'final') continue;
+
+      // Force live status for events confirmed live by the API
+      if (liveIds.has(ev.id) && matchInfo.status !== 'live') {
+        matchInfo.status = 'live';
+      }
 
       const nonPlaceholder = (ev.markets || []).filter(m => !isPlaceholderMarket(m));
       const moneyline = nonPlaceholder.find(m =>
