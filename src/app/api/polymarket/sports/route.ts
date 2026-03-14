@@ -584,11 +584,9 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
       slug: league, label: tc.label, count: tc.count, volume: tc.volume,
     });
 
-    // Accumulate volume from leagues if parent has 0 direct count
-    if (sportMap[parentSport].count === 0) {
-      sportMap[parentSport].count += tc.count;
-      sportMap[parentSport].volume += tc.volume;
-    }
+    // Always accumulate league counts/volume into parent totals
+    sportMap[parentSport].count += tc.count;
+    sportMap[parentSport].volume += tc.volume;
   }
 
   // Deduplicate leagues: merge abbreviations into full names (e.g., cs2 → counter-strike-2)
