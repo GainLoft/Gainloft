@@ -101,7 +101,8 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Step 2: Also promote via diversity (catches things like 'ufc', 'f1' not in SPORT_NAMES)
+      // Step 2: Also promote via diversity (catches 'ufc', 'f1' not in SPORT_NAMES)
+      // BUT skip tags that already co-occur with an existing SPORT_NAMES parent
       const diversity: Record<string, number> = {};
       for (const slug of Array.from(sportRelated)) {
         const cos = coOcc[slug] || {};
@@ -113,39 +114,60 @@ export async function GET(req: NextRequest) {
       }
       for (const slug of Array.from(sportRelated)) {
         if (parentSports[slug]) continue;
-        // High diversity + co-occurs with sports root → parent sport
         if ((diversity[slug] || 0) >= 5) {
           const cos = coOcc[slug] || {};
           const count = tagCount[slug];
+          // Skip if this tag co-occurs with an existing SPORT_NAMES parent
+          let hasNamedParent = false;
+          for (const [co, coCount] of Object.entries(cos)) {
+            if (parentSports[co] && SPORT_NAMES.has(co) && coCount / count >= 0.05) {
+              hasNamedParent = true; break;
+            }
+          }
+          if (hasNamedParent) continue;
           if (cos['sports'] && cos['sports'] / count >= 0.15) {
             parentSports[slug] = tagLabel[slug] || slug;
           }
         }
       }
 
-      // Step 3: Leagues = non-parent sport-related tags → find best parent via co-occurrence
+      // Step 3: Assign leagues to parents via co-occurrence
       const leagueToSport: Record<string, string> = {};
-      for (const slug of Array.from(sportRelated)) {
-        if (parentSports[slug] || slug === 'sports' || slug === 'esports') continue;
-        const cos = coOcc[slug] || {};
-        const count = tagCount[slug];
-        let bestParent: string | null = null;
-        let bestCoOcc = 0;
-        for (const [co, coCount] of Object.entries(cos)) {
-          if (!parentSports[co]) continue;
-          if (coCount / count < 0.05) continue; // must co-occur on ≥5%
-          if (coCount > bestCoOcc) { bestParent = co; bestCoOcc = coCount; }
+      const assignLeagues = () => {
+        for (const slug of Array.from(sportRelated)) {
+          if (parentSports[slug] || leagueToSport[slug] || slug === 'sports' || slug === 'esports') continue;
+          const cos = coOcc[slug] || {};
+          const count = tagCount[slug];
+          let bestParent: string | null = null;
+          let bestCoOcc = 0;
+          for (const [co, coCount] of Object.entries(cos)) {
+            if (!parentSports[co]) continue;
+            if (coCount < 1) continue; // any co-occurrence counts
+            if (coCount > bestCoOcc) { bestParent = co; bestCoOcc = coCount; }
+          }
+          if (bestParent) leagueToSport[slug] = bestParent;
         }
-        if (bestParent) leagueToSport[slug] = bestParent;
-      }
+      };
+      assignLeagues();
 
       // Step 4: Orphan sport-related tags with ≥15 events → promote to parent sport
+      // Only if they don't co-occur with ANY existing parent
       for (const slug of Array.from(sportRelated)) {
         if (parentSports[slug] || leagueToSport[slug] || slug === 'sports' || slug === 'esports') continue;
+        const cos = coOcc[slug] || {};
+        const count = tagCount[slug];
+        let hasAnyParent = false;
+        for (const [co, coCount] of Object.entries(cos)) {
+          if (parentSports[co] && coCount / count >= 0.05) { hasAnyParent = true; break; }
+        }
+        if (hasAnyParent) continue; // will be caught as league
         if (tagCount[slug] >= 15) {
           parentSports[slug] = tagLabel[slug] || slug;
         }
       }
+
+      // Re-run league assignment after orphan promotions
+      assignLeagues();
 
       await pool.query(
         `INSERT INTO api_cache (key, data, updated_at) VALUES ('sport_taxonomy_auto', $1::jsonb, NOW())
