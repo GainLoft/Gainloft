@@ -567,8 +567,15 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
     }
   }
 
+  // Noise tags that aren't real leagues/competitions
+  const NOISE_TAGS = new Set([
+    'goalie', 'goalkeeper', 'red-card', 'yellow-card', 'assists', 'goals',
+    'card', 'sea', 'awards', 'trade', 'mvp', 'conference-championship',
+  ]);
+
   // Assign leagues to parent sports
   for (const [league, parentSport] of Object.entries(leagueToSport)) {
+    if (NOISE_TAGS.has(league)) continue;
     if (!tagCounts[league] || !sportMap[parentSport]) continue;
     const tc = tagCounts[league];
     if (tc.count < 1) continue;
