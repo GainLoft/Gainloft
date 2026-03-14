@@ -825,7 +825,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     return order;
   }, [taxonomy]);
 
-  /* ── Group matches: by SPORT on main view, by DATE when filtered (like Polymarket) ── */
+  /* ── Group matches: by LEAGUE on main view (like Polymarket), by DATE when filtered ── */
   const isFiltered = !!activeFilter;
   const grouped: Record<string, EventGroup[]> = {};
   const groupLabels: Record<string, string> = {};
@@ -840,24 +840,33 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         if (!grouped[dateKey]) { grouped[dateKey] = []; groupLabels[dateKey] = formatDateLabel(dateKey); }
         grouped[dateKey].push(eg);
       } else {
-        // Main view: group by sport
-        const sport = getSportForEvent(eg);
-        if (!grouped[sport]) { grouped[sport] = []; groupLabels[sport] = labelMap[sport] || sport; }
-        grouped[sport].push(eg);
+        // Main view: group by league (like Polymarket)
+        const league = getGroupTag(eg);
+        if (!grouped[league]) { grouped[league] = []; groupLabels[league] = labelMap[league] || eg.match.league || league; }
+        grouped[league].push(eg);
       }
     });
     for (const key of Object.keys(grouped)) {
-      grouped[key].sort((a, b) => {
-        const aTime = new Date(a.match!.start_time || a.end_date_iso || '').getTime();
-        const bTime = new Date(b.match!.start_time || b.end_date_iso || '').getTime();
-        return aTime - bTime;
-      });
+      if (isFiltered) {
+        // Filtered: sort by start time ASC
+        grouped[key].sort((a, b) => {
+          const aTime = new Date(a.match!.start_time || a.end_date_iso || '').getTime();
+          const bTime = new Date(b.match!.start_time || b.end_date_iso || '').getTime();
+          return aTime - bTime;
+        });
+      } else {
+        // Main view: sort within league by volume DESC (like Polymarket)
+        grouped[key].sort((a, b) => (b.volume || 0) - (a.volume || 0));
+      }
     }
   }
 
   const sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
-    if (!isFiltered) return (sportOrder[a] ?? 999) - (sportOrder[b] ?? 999);
-    return a.localeCompare(b);
+    if (isFiltered) return a.localeCompare(b);
+    // Sort league groups by their top event's volume DESC (like Polymarket)
+    const aVol = grouped[a]?.[0]?.volume || 0;
+    const bVol = grouped[b]?.[0]?.volume || 0;
+    return bVol - aVol;
   });
 
   /* ── Top leagues for sidebar quick-access (auto-scraped from Polymarket, fallback to curated) ── */
