@@ -830,6 +830,28 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   const grouped: Record<string, EventGroup[]> = {};
   const groupLabels: Record<string, string> = {};
 
+  // Extract league key directly from event tags (like Polymarket grouping)
+  const GENERIC_TAG_SET = new Set(['sports', 'esports', 'games']);
+  const SPORT_PARENT_SET = new Set(['soccer', 'cricket', 'rugby', 'tennis', 'hockey', 'baseball', 'basketball', 'american-football', 'mma', 'boxing', 'golf', 'formula-1', 'nascar', 'table-tennis', 'football']);
+  const getLeagueKey = (eg: EventGroup): { slug: string; label: string } => {
+    const tags = eg.tags || [];
+    // Find the most specific tag: not generic, not broad sport category
+    for (const t of tags) {
+      const s = t.slug.toLowerCase();
+      if (!GENERIC_TAG_SET.has(s) && !SPORT_PARENT_SET.has(s)) {
+        return { slug: s, label: LABEL_OVERRIDES[s] || labelMap[s] || t.label || s };
+      }
+    }
+    // Fall back: use the sport-level tag (for esports: counter-strike-2, dota-2)
+    for (const t of tags) {
+      const s = t.slug.toLowerCase();
+      if (!GENERIC_TAG_SET.has(s)) {
+        return { slug: s, label: LABEL_OVERRIDES[s] || labelMap[s] || t.label || s };
+      }
+    }
+    return { slug: 'other', label: eg.match?.league || 'Sports' };
+  };
+
   if (viewTab === 'live') {
     displayEvents.forEach((eg) => {
       if (!eg.match) return;
@@ -841,9 +863,9 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         grouped[dateKey].push(eg);
       } else {
         // Main view: group by league (like Polymarket)
-        const league = getGroupTag(eg);
-        if (!grouped[league]) { grouped[league] = []; groupLabels[league] = labelMap[league] || eg.match.league || league; }
-        grouped[league].push(eg);
+        const { slug, label } = getLeagueKey(eg);
+        if (!grouped[slug]) { grouped[slug] = []; groupLabels[slug] = label; }
+        grouped[slug].push(eg);
       }
     });
     for (const key of Object.keys(grouped)) {
