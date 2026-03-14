@@ -95,16 +95,16 @@ function isMatchSettled(ev: PMEvent): boolean {
   const isPast = endDate ? endDate < now : false;
   const hoursPast = endDate ? (now.getTime() - endDate.getTime()) / (1000 * 60 * 60) : 0;
 
-  // Hard cutoff: if end_date is >12 hours ago, the match is certainly over
-  if (hoursPast > 12) return true;
+  // Hard cutoff: any match > 3 hours past its end_date is over
+  if (hoursPast > 3) return true;
 
   // For esports: always check settlement (they can settle mid-match)
   // For traditional sports: only check if end date has passed
   const isEsports = ev.tags?.some(t => ESPORTS_TAGS.has(t.slug));
   if (!isEsports && !isPast) return false;
 
-  // Use a looser threshold for older matches (>3 hours past → 0.88, otherwise 0.95)
-  const threshold = hoursPast > 3 ? 0.88 : 0.95;
+  // Tighter threshold for older matches
+  const threshold = hoursPast > 1 ? 0.88 : 0.95;
 
   // Find Match Winner / Moneyline market
   const mw = markets.find(m =>
@@ -200,7 +200,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
          AND ${egTagWhere}
          AND eg.title ~* 'vs\\.?'
          AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
-         AND (eg.end_date_iso IS NULL OR eg.end_date_iso::timestamptz > NOW() - INTERVAL '12 hours')
+         AND (eg.end_date_iso IS NULL OR eg.end_date_iso::timestamptz > NOW() - INTERVAL '3 hours')
        ORDER BY eg.end_date_iso ASC NULLS LAST
        LIMIT 300`,
       tagParams
@@ -215,7 +215,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
          AND ${mTagWhere}
          AND m.question ~* 'vs\\.?'
          AND m.closed = false
-         AND (m.end_date_iso IS NULL OR m.end_date_iso::timestamptz > NOW() - INTERVAL '12 hours')
+         AND (m.end_date_iso IS NULL OR m.end_date_iso::timestamptz > NOW() - INTERVAL '3 hours')
        ORDER BY m.end_date_iso ASC NULLS LAST
        LIMIT 100`,
       tagParams
@@ -262,7 +262,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
     if (isMatchSettled(pmEvent)) continue;
 
     const matchInfo = buildMatchInfo(pmEvent);
-    if (!matchInfo) continue;
+    if (!matchInfo || matchInfo.status === 'final') continue;
 
     // Convert sub-markets: moneyline first, then others
     const nonPlaceholder = pmEvent.markets.filter(m => !isPlaceholderMarket(m));
@@ -298,7 +298,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
   for (const m of standaloneRows) {
     const tokens = tokensByMarket[m.id] || [];
     const matchInfo = buildStandaloneMatch(m, tokens);
-    if (!matchInfo) continue;
+    if (!matchInfo || matchInfo.status === 'final') continue;
 
     rawEvents.push({
       id: m.id,
@@ -796,10 +796,10 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
     const rawEvents: EventGroup[] = [];
 
     for (const eg of eventGroups) {
-      // Hard skip: any event with end_date more than 12 hours ago
+      // Hard skip: any event with end_date more than 3 hours ago
       if (eg.end_date_iso) {
         const hoursPast = (Date.now() - new Date(eg.end_date_iso).getTime()) / (1000 * 60 * 60);
-        if (hoursPast > 12) continue;
+        if (hoursPast > 3) continue;
       }
 
       const marketRows = allSubMarkets[eg.id] || [];
@@ -809,7 +809,7 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
       if (isMatchSettled(pmEvent)) continue;
 
       const matchInfo = buildMatchInfo(pmEvent);
-      if (!matchInfo) continue;
+      if (!matchInfo || matchInfo.status === 'final') continue;
 
       const nonPlaceholder = pmEvent.markets.filter(m => !isPlaceholderMarket(m));
       const moneyline = nonPlaceholder.find(m =>
@@ -837,14 +837,14 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
 
     // Process standalone markets
     for (const m of standaloneMarkets || []) {
-      // Hard skip: any market with end_date more than 12 hours ago
+      // Hard skip: any market with end_date more than 3 hours ago
       if (m.end_date_iso) {
         const hoursPast = (Date.now() - new Date(m.end_date_iso).getTime()) / (1000 * 60 * 60);
-        if (hoursPast > 12) continue;
+        if (hoursPast > 3) continue;
       }
       const mTokens = tokensByMarket[m.id] || [];
       const matchInfo = buildStandaloneMatch(m, mTokens);
-      if (!matchInfo) continue;
+      if (!matchInfo || matchInfo.status === 'final') continue;
 
       rawEvents.push({
         id: m.id, title: m.question, slug: m.slug,
@@ -1027,9 +1027,11 @@ function buildStandaloneMatch(mRow: any, tokens: Token[]): MatchInfo | null {
   const tags = (mRow.tags || []).map((t: any) => ({ slug: t.slug, label: t.label }));
   const league = deriveLeague(tags);
   const endDate = new Date(mRow.end_date_iso || '');
+  const now = new Date();
+  const hPast = (now.getTime() - endDate.getTime()) / (1000 * 60 * 60);
   let status: 'upcoming' | 'live' | 'final' = 'upcoming';
-  if (mRow.closed) status = 'final';
-  else if (endDate < new Date()) status = 'live';
+  if (mRow.closed || hPast > 3) status = 'final';
+  else if (endDate < now) status = 'live';
 
   return {
     team1: { name: team1Name, abbr: abbr1, logo: '' },

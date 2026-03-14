@@ -484,19 +484,27 @@ export function buildMatchInfo(event: PMEvent): MatchInfo | null {
     }
   }
 
-  // Determine match status
   // Determine match status:
   //   closed=true → FINAL
-  //   end_date < now → LIVE (market still open, match in progress)
-  //   Some sub-markets have settled prices (near 0/1) while others are active → LIVE
+  //   end_date < now + prices settled → FINAL (match over, result known)
+  //   end_date < now + prices NOT settled → LIVE (match in progress or result pending)
+  //   Some sub-markets have settled prices while others are active → LIVE
   //   Otherwise → UPCOMING
   const endDate = new Date(event.endDate);
   const now = new Date();
+  const hoursPast = (now.getTime() - endDate.getTime()) / (1000 * 60 * 60);
   let status: 'upcoming' | 'live' | 'final' = 'upcoming';
-  if (event.closed) {
+  if (event.closed || hoursPast > 3) {
     status = 'final';
   } else if (endDate < now) {
-    status = 'live';
+    // End date passed but within 3 hours — check if result is already decided
+    const nonPH = event.markets.filter(m => !isPlaceholder(m));
+    const hasDecisivePrice = nonPH.some(m => {
+      const prices = parseArr(m.outcomePrices);
+      const p = parseFloat(prices[0] || '0.5');
+      return p > 0.92 || p < 0.08;
+    });
+    status = hasDecisivePrice ? 'final' : 'live';
   } else {
     // Detect in-progress matches: if any "Game X Winner" market has settled
     // (price near 0 or 1) while the Match Winner is still active, match is live

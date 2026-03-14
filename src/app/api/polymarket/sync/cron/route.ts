@@ -350,7 +350,7 @@ export async function GET(req: NextRequest) {
             AND (eg.category = 'Sports' OR eg.tags @> '[{"slug":"sports"}]'::jsonb OR eg.tags @> '[{"slug":"esports"}]'::jsonb)
             AND eg.title ~* 'vs\\.?'
             AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
-            AND (eg.end_date_iso IS NULL OR eg.end_date_iso::timestamptz > NOW() - INTERVAL '12 hours')
+            AND (eg.end_date_iso IS NULL OR eg.end_date_iso::timestamptz > NOW() - INTERVAL '3 hours')
           ORDER BY eg.end_date_iso ASC NULLS LAST LIMIT 500
         `),
         pool.query(`
@@ -365,7 +365,7 @@ export async function GET(req: NextRequest) {
           WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
             AND (m.category = 'Sports' OR m.tags @> '[{"slug":"sports"}]'::jsonb OR m.tags @> '[{"slug":"esports"}]'::jsonb)
             AND m.question ~* 'vs\\.?' AND m.closed = false
-            AND (m.end_date_iso IS NULL OR m.end_date_iso::timestamptz > NOW() - INTERVAL '12 hours')
+            AND (m.end_date_iso IS NULL OR m.end_date_iso::timestamptz > NOW() - INTERVAL '3 hours')
           ORDER BY m.end_date_iso ASC NULLS LAST LIMIT 200
         `),
       ]);
