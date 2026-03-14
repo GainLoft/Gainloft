@@ -204,17 +204,21 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     if (allEvents.length === 0) return null;
 
+    // Diagnostic counters
+    const diag = { total: allEvents.length, liveApiCount: liveResults.length, closed: 0, noVs: 0, settled: 0, noMatch: 0, final: 0, passed: 0 };
+
     // Process through existing pipeline
     const rawEvents: EventGroup[] = [];
     for (const ev of allEvents) {
-      if (ev.closed) continue;
-      if (!/vs\.?/i.test(ev.title)) continue;
+      if (ev.closed) { diag.closed++; continue; }
+      if (!/vs\.?/i.test(ev.title)) { diag.noVs++; continue; }
       const isApiLive = liveIds.has(ev.id);
       // Trust Polymarket's live API — don't filter out API-confirmed live events
-      if (!isApiLive && isMatchSettled(ev)) continue;
+      if (!isApiLive && isMatchSettled(ev)) { diag.settled++; continue; }
       const matchInfo = buildMatchInfo(ev);
-      if (!matchInfo) continue;
-      if (!isApiLive && matchInfo.status === 'final') continue;
+      if (!matchInfo) { diag.noMatch++; continue; }
+      if (!isApiLive && matchInfo.status === 'final') { diag.final++; continue; }
+      diag.passed++;
       // Force live status for events confirmed live by the API
       if (isApiLive) {
         matchInfo.status = 'live';
@@ -262,7 +266,7 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     const topLeagueOrder = taxonomy ? await getTopLeagueOrder() : null;
 
     return NextResponse.json(
-      { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}), ...(topLeagueOrder ? { topLeagueOrder } : {}) },
+      { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}), ...(topLeagueOrder ? { topLeagueOrder } : {}), _diag: { ...diag, merged: merged.length, liveIds: Array.from(liveIds).slice(0, 20) } },
       { headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30' } }
     );
   } catch (err) {
