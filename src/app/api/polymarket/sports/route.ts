@@ -156,9 +156,13 @@ const GAMMA_API = 'https://gamma-api.polymarket.com';
 /** Fetch live sports directly from Polymarket's Gamma API (real-time, same data as polymarket.com/sports) */
 async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
   try {
+    const now = new Date();
+    const minEnd = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString(); // 3h ago (live matches)
+    const maxEnd = new Date(now.getTime() + 12 * 60 * 60 * 1000).toISOString(); // 12h ahead (starting soon)
     const params = (tag: string) => new URLSearchParams({
       active: 'true', closed: 'false', tag_slug: tag,
       order: 'volume24hr', ascending: 'false',
+      end_date_min: minEnd, end_date_max: maxEnd,
       limit: '50',
     });
 
