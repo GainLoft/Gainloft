@@ -36,9 +36,8 @@ export async function GET(req: NextRequest) {
       return await handleMatches(offset, limit, sportFilter, leagueFilter);
     }
 
-    // Build tag filter conditions for DB-based futures tab (include league slugs)
-    const futuresSlugs = ['sports', 'esports', ...Object.keys(PARENT_SPORTS), ...Object.keys(LEAGUE_TO_SPORT)];
-    const SPORT_ROOT_CONDITION = `(${futuresSlugs.map(s => `t.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ')})`;
+    // Filter to sports events by category (set during sync, no hardcoded tag lists)
+    const SPORT_ROOT_CONDITION = `t.category = 'Sports'`;
 
     const tagConditions: string[] = [SPORT_ROOT_CONDITION];
     const tagParams: any[] = [];
@@ -155,10 +154,9 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
     } catch { /* fall through to live queries */ }
   }
 
-  // Build tag filter conditions — include league slugs so events with only league tags are captured
-  const allSlugs = ['sports', 'esports', ...Object.keys(PARENT_SPORTS), ...Object.keys(LEAGUE_TO_SPORT)];
-  const SPORT_ROOT_CONDITION_EG = `(${allSlugs.map(s => `eg.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ')})`;
-  const SPORT_ROOT_CONDITION_M = `(${allSlugs.map(s => `m.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ')})`;
+  // Filter to sports events by category (set during sync, no hardcoded tag lists)
+  const SPORT_ROOT_CONDITION_EG = `eg.category = 'Sports'`;
+  const SPORT_ROOT_CONDITION_M = `m.category = 'Sports'`;
 
   const egTagConditions: string[] = [SPORT_ROOT_CONDITION_EG];
   const mTagConditions: string[] = [SPORT_ROOT_CONDITION_M];
@@ -471,7 +469,8 @@ async function handleFutures(tagWhere: string, tagParams: any[], paramIdx: numbe
 //  Taxonomy — built from DB counts, not from events
 // ═══════════════════════════════════════════════════
 
-const PARENT_SPORTS: Record<string, string> = {
+// Fallback constants — only used if auto-taxonomy cache hasn't been computed yet
+const FALLBACK_PARENT_SPORTS: Record<string, string> = {
   basketball: 'Basketball', soccer: 'Soccer', esports: 'Esports',
   tennis: 'Tennis', hockey: 'Hockey', cricket: 'Cricket',
   baseball: 'Baseball', football: 'Football', rugby: 'Rugby',
@@ -480,146 +479,95 @@ const PARENT_SPORTS: Record<string, string> = {
   pickleball: 'Pickleball', lacrosse: 'Lacrosse',
 };
 
-// Explicit league → parent sport mapping (events often have league tag but not parent sport tag)
-const LEAGUE_TO_SPORT: Record<string, string> = {
-  // Basketball
-  nba: 'basketball', ncaab: 'basketball', wnba: 'basketball', euroleague: 'basketball',
-  'nba-playoffs': 'basketball', 'nba-finals': 'basketball', 'march-madness': 'basketball',
-  // Soccer
-  epl: 'soccer', 'premier-league': 'soccer', 'la-liga': 'soccer', 'serie-a': 'soccer',
-  bundesliga: 'soccer', 'ligue-1': 'soccer', ucl: 'soccer', 'champions-league': 'soccer',
-  'europa-league': 'soccer', mls: 'soccer', 'liga-mx': 'soccer',
-  'copa-america': 'soccer', 'euros': 'soccer', 'world-cup': 'soccer',
-  'concacaf': 'soccer', 'saudi-pro-league': 'soccer',
-  // Hockey
-  nhl: 'hockey', 'nhl-playoffs': 'hockey', khl: 'hockey',
-  // Esports
+const FALLBACK_LEAGUE_TO_SPORT: Record<string, string> = {
+  nba: 'basketball', ncaab: 'basketball', wnba: 'basketball',
+  nhl: 'hockey', khl: 'hockey',
   'counter-strike-2': 'esports', 'dota-2': 'esports', 'league-of-legends': 'esports',
   valorant: 'esports', 'honor-of-kings': 'esports', 'call-of-duty': 'esports',
   overwatch: 'esports', 'rocket-league': 'esports',
-  // Baseball
-  mlb: 'baseball', npb: 'baseball',
-  // Football
-  nfl: 'football', 'nfl-playoffs': 'football', 'super-bowl': 'football', ncaaf: 'football',
-  xfl: 'football',
-  // Tennis
-  atp: 'tennis', wta: 'tennis', 'us-open': 'tennis', wimbledon: 'tennis',
-  'french-open': 'tennis', 'australian-open': 'tennis',
-  // Cricket
-  ipl: 'cricket', 't20-world-cup': 'cricket', 'the-ashes': 'cricket',
-  // Rugby
-  'six-nations': 'rugby', 'rugby-world-cup': 'rugby', 'super-rugby': 'rugby',
-  // Golf
-  pga: 'golf', 'masters': 'golf', 'us-open-golf': 'golf', 'the-open': 'golf',
-  // F1
-  'formula-1': 'f1', 'f1-race': 'f1',
+  mlb: 'baseball', nfl: 'football', ncaaf: 'football',
+  epl: 'soccer', ucl: 'soccer', mls: 'soccer', 'la-liga': 'soccer',
+  'serie-a': 'soccer', bundesliga: 'soccer',
+  atp: 'tennis', wta: 'tennis',
+  ipl: 'cricket', pga: 'golf',
 };
-
-const META_TAGS = new Set([
-  'sports', 'esports', 'games', 'hide-from-new', 'speculation',
-  'pop-culture', 'celebrities', 'politics', 'trump', 'geopolitics',
-  'business', 'economy', 'parlays', 'music', 'streaming',
-  'ukraine', 'russia', 'peace', 'putin', 'zelenskyy',
-  'ukraine-peace-deal', 'china', 'olympics', 'skiing',
-  'all', 'featured', 'todays-sports', 'internet-culture',
-  'crypto', 'cryptocurrency', 'fight', 'boxingmma', 'combats',
-  'netflix', 'twitter', 'x', 'solana', 'sol', 'memecoins',
-]);
 
 interface TaxonomyItem {
   slug: string;
   label: string;
   count: number;
-  leagues: { slug: string; label: string; count: number }[];
+  volume: number;
+  leagues: { slug: string; label: string; count: number; volume: number }[];
 }
 
 async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
-  // All slugs that identify a sports event (parent sports + all known leagues), deduplicated
-  const allSportSlugs = Array.from(new Set([
-    'sports', 'esports',
-    ...Object.keys(PARENT_SPORTS),
-    ...Object.keys(LEAGUE_TO_SPORT),
-  ]));
-  const rootCond = allSportSlugs
-    .map(s => `tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
+  // Read auto-detected taxonomy from cache (computed by cron every 10 min)
+  let parentSports: Record<string, string> = FALLBACK_PARENT_SPORTS;
+  let leagueToSport: Record<string, string> = FALLBACK_LEAGUE_TO_SPORT;
 
-  // Flat query: get every tag slug + label + count + volume from active sports events
+  try {
+    const { rows: cacheRows } = await pool.query(`SELECT data FROM api_cache WHERE key = 'sport_taxonomy_auto'`);
+    if (cacheRows[0]?.data?.parentSports && Object.keys(cacheRows[0].data.parentSports).length > 0) {
+      parentSports = cacheRows[0].data.parentSports;
+      leagueToSport = cacheRows[0].data.leagueToSport;
+    }
+  } catch { /* use fallback */ }
+
+  // Query tag counts from sports events (category-based, no hardcoded tag lists)
   const { rows } = await pool.query(`
     SELECT t->>'slug' as tag_slug, t->>'label' as tag_label,
            COUNT(DISTINCT sub.id) as cnt, SUM(sub.vol) as total_vol
     FROM (
       SELECT eg.id, eg.tags, COALESCE(eg.volume, 0)::numeric as vol
       FROM event_groups eg
-      WHERE eg.polymarket_id IS NOT NULL
-        AND (${rootCond})
+      WHERE eg.polymarket_id IS NOT NULL AND eg.category = 'Sports'
         AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
       UNION ALL
       SELECT m.id, m.tags, COALESCE(m.volume, 0)::numeric as vol
       FROM markets m
       WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
-        AND (${rootCond})
-        AND m.closed = false
+        AND m.category = 'Sports' AND m.closed = false
     ) sub, jsonb_array_elements(sub.tags) as t
     GROUP BY tag_slug, tag_label
     ORDER BY total_vol DESC
   `);
 
-  // Build sport map using explicit LEAGUE_TO_SPORT mapping
-  const sportMap: Record<string, { label: string; count: number; volume: number; leagues: { slug: string; label: string; count: number; volume: number }[] }> = {};
-
-  // Initialize all parent sports
-  for (const [slug, label] of Object.entries(PARENT_SPORTS)) {
-    sportMap[slug] = { label, count: 0, volume: 0, leagues: [] };
-  }
-
   // Tag counts lookup
   const tagCounts: Record<string, { label: string; count: number; volume: number }> = {};
   for (const r of rows) {
-    const slug = r.tag_slug.toLowerCase();
-    tagCounts[slug] = {
+    tagCounts[r.tag_slug.toLowerCase()] = {
       label: r.tag_label,
       count: parseInt(r.cnt),
       volume: parseFloat(r.total_vol) || 0,
     };
   }
 
-  // Set parent sport counts from their own tag
-  for (const sport of Object.keys(PARENT_SPORTS)) {
-    if (tagCounts[sport]) {
-      sportMap[sport].count = tagCounts[sport].count;
-      sportMap[sport].volume = tagCounts[sport].volume;
+  // Build sport map from auto-detected taxonomy
+  const sportMap: Record<string, { label: string; count: number; volume: number; leagues: { slug: string; label: string; count: number; volume: number }[] }> = {};
+
+  for (const [slug, label] of Object.entries(parentSports)) {
+    sportMap[slug] = { label, count: 0, volume: 0, leagues: [] };
+    if (tagCounts[slug]) {
+      sportMap[slug].count = tagCounts[slug].count;
+      sportMap[slug].volume = tagCounts[slug].volume;
     }
   }
 
-  // Assign leagues to parent sports via LEAGUE_TO_SPORT
-  for (const [league, parentSport] of Object.entries(LEAGUE_TO_SPORT)) {
-    if (!tagCounts[league]) continue;
+  // Assign leagues to parent sports
+  for (const [league, parentSport] of Object.entries(leagueToSport)) {
+    if (!tagCounts[league] || !sportMap[parentSport]) continue;
     const tc = tagCounts[league];
     if (tc.count < 1) continue;
 
     sportMap[parentSport].leagues.push({
-      slug: league,
-      label: tc.label,
-      count: tc.count,
-      volume: tc.volume,
+      slug: league, label: tc.label, count: tc.count, volume: tc.volume,
     });
 
-    // If parent sport has 0 count (events don't have parent tag), accumulate from leagues
+    // Accumulate volume from leagues if parent has 0 direct count
     if (sportMap[parentSport].count === 0) {
       sportMap[parentSport].count += tc.count;
       sportMap[parentSport].volume += tc.volume;
     }
-  }
-
-  // Also scan for unknown leagues: tags that co-occur with parent sports but aren't in LEAGUE_TO_SPORT
-  // (handles new leagues automatically)
-  for (const r of rows) {
-    const slug = r.tag_slug.toLowerCase();
-    if (META_TAGS.has(slug) || PARENT_SPORTS[slug] || LEAGUE_TO_SPORT[slug]) continue;
-    if (slug === 'sports') continue;
-    const cnt = parseInt(r.cnt);
-    if (cnt < 2) continue;
-    // Skip — we only add known leagues via the explicit mapping
   }
 
   // Sort leagues within each sport by volume desc
@@ -627,17 +575,11 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
     sport.leagues.sort((a, b) => b.volume - a.volume);
   }
 
-  // Sort parent sports by volume desc (matches Polymarket's sidebar order)
-  const result: TaxonomyItem[] = Object.entries(sportMap)
+  // Sort parent sports by volume desc
+  return Object.entries(sportMap)
     .filter(([, v]) => v.count > 0)
-    .map(([slug, v]) => ({ slug, label: v.label, count: v.count, volume: v.volume, leagues: v.leagues.map(l => ({ ...l, volume: l.volume })) }))
-    .sort((a, b) => {
-      const aVol = sportMap[a.slug].volume;
-      const bVol = sportMap[b.slug].volume;
-      return bVol - aVol;
-    });
-
-  return result;
+    .map(([slug, v]) => ({ slug, label: v.label, count: v.count, volume: v.volume, leagues: v.leagues }))
+    .sort((a, b) => b.volume - a.volume);
 }
 
 // ═══════════════════════════════════════════════════

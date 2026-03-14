@@ -91,29 +91,101 @@ export async function GET(req: NextRequest) {
       }
     } catch { /* skip */ }
 
-    // 5. Precompute sports cache
+    // 5. Auto-detect sport taxonomy from tag co-occurrence
     try {
       await pool.query(`CREATE TABLE IF NOT EXISTS api_cache (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
 
-      // Use ALL known sport/league tags dynamically from LEAGUE_TO_SPORT + PARENT_SPORTS
-      const allSportSlugs = [
-        'sports', 'esports',
-        'basketball', 'soccer', 'tennis', 'hockey', 'cricket', 'baseball', 'football', 'rugby',
-        'ufc', 'boxing', 'golf', 'f1', 'chess', 'table-tennis', 'pickleball', 'lacrosse',
-        'nba', 'ncaab', 'wnba', 'nhl', 'nfl', 'mlb', 'mls', 'epl', 'ucl', 'la-liga',
-        'serie-a', 'bundesliga', 'ligue-1', 'premier-league', 'champions-league', 'europa-league',
-        'liga-mx', 'copa-america', 'euros', 'world-cup', 'saudi-pro-league', 'concacaf',
-        'counter-strike-2', 'dota-2', 'league-of-legends', 'valorant', 'honor-of-kings',
-        'call-of-duty', 'overwatch', 'rocket-league', 'rainbow-six',
-        'atp', 'wta', 'us-open', 'wimbledon', 'french-open', 'australian-open',
-        'ipl', 't20-world-cup', 'pga', 'masters', 'six-nations', 'super-bowl',
-        'nfl-playoffs', 'nba-playoffs', 'nba-finals', 'nhl-playoffs', 'march-madness',
-        'ncaaf', 'cfb', 'college-football', 'ncaa', 'college-basketball',
-        'khl', 'npb', 'xfl', 'formula-1',
-      ];
-      const rootCond = allSportSlugs.map(s => `eg.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
-      const rootCondM = allSportSlugs.map(s => `m.tags @> '[{"slug":"${s}"}]'::jsonb`).join(' OR ');
+      const { rows: sportEvents } = await pool.query(`
+        SELECT tags FROM event_groups
+        WHERE polymarket_id IS NOT NULL AND category = 'Sports'
+          AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = event_groups.id AND m.closed = false)
+        UNION ALL
+        SELECT tags FROM markets
+        WHERE polymarket_id IS NOT NULL AND event_group_id IS NULL
+          AND category = 'Sports' AND closed = false
+      `);
 
+      const META = new Set(['all','featured','hide-from-new','speculation','pop-culture','celebrities','politics','trump','geopolitics','business','economy','parlays','music','streaming','games','internet-culture','crypto','cryptocurrency','fight','boxingmma','combats','netflix','twitter','x','solana','sol','memecoins','ukraine','russia','peace','putin','zelenskyy','ukraine-peace-deal','china','olympics','skiing','todays-sports']);
+      const ROOT = new Set(['sports', 'esports']);
+
+      const tagCount: Record<string, number> = {};
+      const tagLabel: Record<string, string> = {};
+      const coOcc: Record<string, Record<string, number>> = {};
+
+      for (const { tags } of sportEvents) {
+        if (!Array.isArray(tags)) continue;
+        const slugs: string[] = [];
+        for (const t of tags as any[]) {
+          const s = (t.slug || '').toLowerCase();
+          if (!s) continue;
+          slugs.push(s);
+          tagCount[s] = (tagCount[s] || 0) + 1;
+          if (!tagLabel[s]) tagLabel[s] = t.label || s;
+        }
+        for (const a of slugs) {
+          for (const b of slugs) {
+            if (a === b) continue;
+            if (!coOcc[a]) coOcc[a] = {};
+            coOcc[a][b] = (coOcc[a][b] || 0) + 1;
+          }
+        }
+      }
+
+      // Find most specific parent for each tag (co-occurs on ≥20% of events, has more total events)
+      const parentOf: Record<string, string> = {};
+      for (const slug of Object.keys(tagCount)) {
+        if (ROOT.has(slug) || META.has(slug)) continue;
+        const count = tagCount[slug];
+        const cos = coOcc[slug] || {};
+        let best: string | null = null;
+        let bestN = Infinity;
+        for (const [co, coCount] of Object.entries(cos)) {
+          if (META.has(co) || co === slug) continue;
+          const coN = tagCount[co] || 0;
+          if (coN <= count) continue;
+          if (coCount / count < 0.2) continue;
+          if (coN < bestN) { best = co; bestN = coN; }
+        }
+        if (best) parentOf[slug] = best;
+      }
+
+      // Level 1: parent sports = direct children of root tags
+      const parentSports: Record<string, string> = {};
+      for (const [slug, par] of Object.entries(parentOf)) {
+        if (ROOT.has(par)) parentSports[slug] = tagLabel[slug] || slug;
+      }
+
+      // Level 2: leagues = children/grandchildren of parent sports
+      const leagueToSport: Record<string, string> = {};
+      for (const [slug, par] of Object.entries(parentOf)) {
+        if (parentSports[slug] || ROOT.has(slug)) continue;
+        if (parentSports[par]) {
+          leagueToSport[slug] = par;
+        } else {
+          const gp = parentOf[par];
+          if (gp && parentSports[gp]) leagueToSport[slug] = gp;
+          else if (gp) {
+            const ggp = parentOf[gp];
+            if (ggp && parentSports[ggp]) leagueToSport[slug] = ggp;
+          }
+        }
+      }
+
+      await pool.query(
+        `INSERT INTO api_cache (key, data, updated_at) VALUES ('sport_taxonomy_auto', $1::jsonb, NOW())
+         ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
+        [JSON.stringify({
+          parentSports, leagueToSport,
+          allSportSlugs: Array.from(new Set(['sports', 'esports', ...Object.keys(parentSports), ...Object.keys(leagueToSport)])),
+          computedAt: new Date().toISOString(),
+        })]
+      );
+    } catch (taxErr) {
+      console.error('Auto taxonomy error:', taxErr);
+    }
+
+    // 6. Precompute sports cache (uses category = 'Sports' — no hardcoded tag lists)
+    try {
       const [egResult, standaloneResult] = await Promise.all([
         pool.query(`
           SELECT eg.id, eg.title, eg.slug, eg.description, eg.category, eg.tags,
@@ -122,7 +194,7 @@ export async function GET(req: NextRequest) {
             eg.comment_count, eg.competitive, eg.volume_1wk, eg.volume_1mo,
             eg.featured, eg.open_interest, eg.start_date
           FROM event_groups eg
-          WHERE eg.polymarket_id IS NOT NULL AND (${rootCond})
+          WHERE eg.polymarket_id IS NOT NULL AND eg.category = 'Sports'
             AND eg.title ~* 'vs\\.?'
             AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
           ORDER BY eg.volume DESC LIMIT 500
@@ -137,7 +209,7 @@ export async function GET(req: NextRequest) {
             m.competitive, m.volume_1wk, m.volume_1mo, m.submitted_by
           FROM markets m
           WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
-            AND (${rootCondM}) AND m.question ~* 'vs\\.?' AND m.closed = false
+            AND m.category = 'Sports' AND m.question ~* 'vs\\.?' AND m.closed = false
           ORDER BY m.volume DESC LIMIT 200
         `),
       ]);
