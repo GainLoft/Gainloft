@@ -97,12 +97,14 @@ export async function GET(req: NextRequest) {
 
       const { rows: sportEvents } = await pool.query(`
         SELECT tags FROM event_groups
-        WHERE polymarket_id IS NOT NULL AND category = 'Sports'
+        WHERE polymarket_id IS NOT NULL
+          AND (category = 'Sports' OR tags @> '[{"slug":"sports"}]'::jsonb OR tags @> '[{"slug":"esports"}]'::jsonb)
           AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = event_groups.id AND m.closed = false)
         UNION ALL
         SELECT tags FROM markets
         WHERE polymarket_id IS NOT NULL AND event_group_id IS NULL
-          AND category = 'Sports' AND closed = false
+          AND (category = 'Sports' OR tags @> '[{"slug":"sports"}]'::jsonb OR tags @> '[{"slug":"esports"}]'::jsonb)
+          AND closed = false
       `);
 
       const META = new Set(['all','featured','hide-from-new','speculation','pop-culture','celebrities','politics','trump','geopolitics','business','economy','parlays','music','streaming','games','internet-culture','crypto','cryptocurrency','fight','boxingmma','combats','netflix','twitter','x','solana','sol','memecoins','ukraine','russia','peace','putin','zelenskyy','ukraine-peace-deal','china','olympics','skiing','todays-sports']);
@@ -184,7 +186,13 @@ export async function GET(req: NextRequest) {
       console.error('Auto taxonomy error:', taxErr);
     }
 
-    // 6. Precompute sports cache (uses category = 'Sports' — no hardcoded tag lists)
+    // 5.5. Fix stale categories — ensure all sports-tagged events have category = 'Sports'
+    try {
+      await pool.query(`UPDATE event_groups SET category = 'Sports' WHERE category != 'Sports' AND (tags @> '[{"slug":"sports"}]'::jsonb OR tags @> '[{"slug":"esports"}]'::jsonb)`);
+      await pool.query(`UPDATE markets SET category = 'Sports' WHERE category != 'Sports' AND (tags @> '[{"slug":"sports"}]'::jsonb OR tags @> '[{"slug":"esports"}]'::jsonb)`);
+    } catch { /* skip */ }
+
+    // 6. Precompute sports cache
     try {
       const [egResult, standaloneResult] = await Promise.all([
         pool.query(`
@@ -194,7 +202,8 @@ export async function GET(req: NextRequest) {
             eg.comment_count, eg.competitive, eg.volume_1wk, eg.volume_1mo,
             eg.featured, eg.open_interest, eg.start_date
           FROM event_groups eg
-          WHERE eg.polymarket_id IS NOT NULL AND eg.category = 'Sports'
+          WHERE eg.polymarket_id IS NOT NULL
+            AND (eg.category = 'Sports' OR eg.tags @> '[{"slug":"sports"}]'::jsonb OR eg.tags @> '[{"slug":"esports"}]'::jsonb)
             AND eg.title ~* 'vs\\.?'
             AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
           ORDER BY eg.volume DESC LIMIT 500
@@ -209,7 +218,8 @@ export async function GET(req: NextRequest) {
             m.competitive, m.volume_1wk, m.volume_1mo, m.submitted_by
           FROM markets m
           WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
-            AND m.category = 'Sports' AND m.question ~* 'vs\\.?' AND m.closed = false
+            AND (m.category = 'Sports' OR m.tags @> '[{"slug":"sports"}]'::jsonb OR m.tags @> '[{"slug":"esports"}]'::jsonb)
+            AND m.question ~* 'vs\\.?' AND m.closed = false
           ORDER BY m.volume DESC LIMIT 200
         `),
       ]);

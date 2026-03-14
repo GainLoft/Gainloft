@@ -36,8 +36,8 @@ export async function GET(req: NextRequest) {
       return await handleMatches(offset, limit, sportFilter, leagueFilter);
     }
 
-    // Filter to sports events by category (set during sync, no hardcoded tag lists)
-    const SPORT_ROOT_CONDITION = `t.category = 'Sports'`;
+    // Hybrid filter: category OR root sport/esport tag (covers events with stale category)
+    const SPORT_ROOT_CONDITION = `(t.category = 'Sports' OR t.tags @> '[{"slug":"sports"}]'::jsonb OR t.tags @> '[{"slug":"esports"}]'::jsonb)`;
 
     const tagConditions: string[] = [SPORT_ROOT_CONDITION];
     const tagParams: any[] = [];
@@ -154,9 +154,9 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
     } catch { /* fall through to live queries */ }
   }
 
-  // Filter to sports events by category (set during sync, no hardcoded tag lists)
-  const SPORT_ROOT_CONDITION_EG = `eg.category = 'Sports'`;
-  const SPORT_ROOT_CONDITION_M = `m.category = 'Sports'`;
+  // Hybrid filter: category OR root sport/esport tag (covers events with stale category)
+  const SPORT_ROOT_CONDITION_EG = `(eg.category = 'Sports' OR eg.tags @> '[{"slug":"sports"}]'::jsonb OR eg.tags @> '[{"slug":"esports"}]'::jsonb)`;
+  const SPORT_ROOT_CONDITION_M = `(m.category = 'Sports' OR m.tags @> '[{"slug":"sports"}]'::jsonb OR m.tags @> '[{"slug":"esports"}]'::jsonb)`;
 
   const egTagConditions: string[] = [SPORT_ROOT_CONDITION_EG];
   const mTagConditions: string[] = [SPORT_ROOT_CONDITION_M];
@@ -520,13 +520,15 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
     FROM (
       SELECT eg.id, eg.tags, COALESCE(eg.volume, 0)::numeric as vol
       FROM event_groups eg
-      WHERE eg.polymarket_id IS NOT NULL AND eg.category = 'Sports'
+      WHERE eg.polymarket_id IS NOT NULL
+        AND (eg.category = 'Sports' OR eg.tags @> '[{"slug":"sports"}]'::jsonb OR eg.tags @> '[{"slug":"esports"}]'::jsonb)
         AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
       UNION ALL
       SELECT m.id, m.tags, COALESCE(m.volume, 0)::numeric as vol
       FROM markets m
       WHERE m.polymarket_id IS NOT NULL AND m.event_group_id IS NULL
-        AND m.category = 'Sports' AND m.closed = false
+        AND (m.category = 'Sports' OR m.tags @> '[{"slug":"sports"}]'::jsonb OR m.tags @> '[{"slug":"esports"}]'::jsonb)
+        AND m.closed = false
     ) sub, jsonb_array_elements(sub.tags) as t
     GROUP BY tag_slug, tag_label
     ORDER BY total_vol DESC
