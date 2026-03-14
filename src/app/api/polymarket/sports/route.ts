@@ -158,32 +158,33 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
   try {
     const now = new Date();
     const minEnd = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString();
-    const params = (tag: string) => new URLSearchParams({
-      active: 'true', closed: 'false', tag_slug: tag,
-      order: 'endDate', ascending: 'true',
-      end_date_min: minEnd, limit: '100',
-    });
-
-    const [sportsRes, esportsRes] = await Promise.all([
-      fetch(`${GAMMA_API}/events?${params('sports')}`, {
+    const SPORT_TAGS = [
+      'sports', 'soccer', 'basketball', 'tennis', 'cricket', 'hockey',
+      'rugby', 'ufc', 'boxing', 'baseball', 'football', 'golf',
+      'table-tennis', 'counter-strike-2', 'dota-2', 'league-of-legends',
+      'honor-of-kings', 'valorant', 'rainbow-six-siege',
+    ];
+    const fetchTag = (tag: string) => {
+      const p = new URLSearchParams({
+        active: 'true', closed: 'false', tag_slug: tag,
+        order: 'endDate', ascending: 'true',
+        end_date_min: minEnd, limit: '30',
+      });
+      return fetch(`${GAMMA_API}/events?${p}`, {
         cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' },
         signal: AbortSignal.timeout(8000),
-      }),
-      fetch(`${GAMMA_API}/events?${params('esports')}`, {
-        cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(8000),
-      }),
-    ]);
+      }).then(r => r.ok ? r.json() : []).catch(() => []);
+    };
 
-    if (!sportsRes.ok && !esportsRes.ok) return null;
+    const results = await Promise.all(SPORT_TAGS.map(fetchTag));
+    const allFetched: PMEvent[] = results.flat();
 
-    const sportsEvents: PMEvent[] = sportsRes.ok ? await sportsRes.json() : [];
-    const esportsEvents: PMEvent[] = esportsRes.ok ? await esportsRes.json() : [];
+    if (allFetched.length === 0) return null;
 
-    // Deduplicate by ID, merge both tags
+    // Deduplicate by ID
     const seen = new Set<string>();
     const allEvents: PMEvent[] = [];
-    for (const ev of [...sportsEvents, ...esportsEvents]) {
+    for (const ev of allFetched) {
       if (seen.has(ev.id)) continue;
       seen.add(ev.id);
       if (!/vs\.?/i.test(ev.title)) continue;
