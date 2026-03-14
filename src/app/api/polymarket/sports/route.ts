@@ -173,32 +173,35 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     };
 
     // Gamma API caps at 10 events per page — paginate in parallel
+    // Fetch in two phases to avoid rate limits while maximizing coverage
     const liveOffsets = [0, 10, 20, 30, 40]; // up to 50 live events
-    const todayOffsets = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]; // up to 100 today events
-    const tomorrowOffsets = [0, 10, 20]; // up to 30 tomorrow events
 
-    const allRequests = [
-      // Live events (guaranteed to match polymarket.com/sports live section)
-      ...liveOffsets.map(o => fetchPage({ closed: 'false', live: 'true', limit: '10', offset: String(o) })),
-      // Today's events (includes live + upcoming for today)
+    // Phase 1: Live events (fast, small set)
+    const liveResults: PMEvent[] = (await Promise.all(
+      liveOffsets.map(o => fetchPage({ closed: 'false', live: 'true', limit: '10', offset: String(o) }))
+    )).flat();
+
+    // Phase 2: Today + tomorrow events (broader coverage, 400 events = covers full day)
+    const todayOffsets = Array.from({ length: 40 }, (_, i) => i * 10); // 0..390
+    const tomorrowOffsets = [0, 10, 20, 30, 40]; // up to 50 tomorrow events
+    const dateResults: PMEvent[] = (await Promise.all([
       ...todayOffsets.map(o => fetchPage({ closed: 'false', event_date: today, limit: '10', offset: String(o) })),
-      // Tomorrow's events
       ...tomorrowOffsets.map(o => fetchPage({ closed: 'false', event_date: tomorrow, limit: '10', offset: String(o) })),
-    ];
+    ])).flat();
 
-    const results = await Promise.all(allRequests);
+    const results = [liveResults, dateResults];
 
     // Track which events are confirmed live
-    const liveResults = results.slice(0, liveOffsets.length).flat();
+    // Track which events are confirmed live
     const liveIds = new Set(liveResults.map(ev => ev.id));
 
-    // Deduplicate: live events first, then today, then tomorrow
+    // Deduplicate: live events first, then date-based events
     const seen = new Set<string>();
     const allEvents: PMEvent[] = [];
     for (const ev of liveResults) {
       if (!seen.has(ev.id)) { seen.add(ev.id); allEvents.push(ev); }
     }
-    for (const ev of results.slice(liveOffsets.length).flat()) {
+    for (const ev of dateResults) {
       if (!seen.has(ev.id)) { seen.add(ev.id); allEvents.push(ev); }
     }
 
