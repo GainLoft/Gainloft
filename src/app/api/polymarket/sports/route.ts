@@ -204,21 +204,17 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     if (allEvents.length === 0) return null;
 
-    // Diagnostic counters
-    const diag = { total: allEvents.length, liveApiCount: liveResults.length, closed: 0, noVs: 0, settled: 0, noMatch: 0, final: 0, passed: 0 };
-
     // Process through existing pipeline
     const rawEvents: EventGroup[] = [];
     for (const ev of allEvents) {
-      if (ev.closed) { diag.closed++; continue; }
-      if (!/vs\.?/i.test(ev.title)) { diag.noVs++; continue; }
+      if (ev.closed) continue;
+      if (!/vs\.?/i.test(ev.title)) continue;
       const isApiLive = liveIds.has(ev.id);
       // Trust Polymarket's live API — don't filter out API-confirmed live events
-      if (!isApiLive && isMatchSettled(ev)) { diag.settled++; continue; }
+      if (!isApiLive && isMatchSettled(ev)) continue;
       const matchInfo = buildMatchInfo(ev);
-      if (!matchInfo) { diag.noMatch++; continue; }
-      if (!isApiLive && matchInfo.status === 'final') { diag.final++; continue; }
-      diag.passed++;
+      if (!matchInfo) continue;
+      if (!isApiLive && matchInfo.status === 'final') continue;
       // Force live status for events confirmed live by the API
       if (isApiLive) {
         matchInfo.status = 'live';
@@ -250,12 +246,19 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     }
 
     const merged = mergeMatchEvents(rawEvents);
-    // Sort: live first by volume DESC, then upcoming by volume DESC
+    // Sort: live first by volume DESC, then upcoming by start time ASC (soonest first)
     merged.sort((a, b) => {
       const aLive = a.match?.status === 'live' ? 0 : 1;
       const bLive = b.match?.status === 'live' ? 0 : 1;
       if (aLive !== bLive) return aLive - bLive;
-      return (b.volume || 0) - (a.volume || 0);
+      if (aLive === 0) {
+        // Both live: sort by volume DESC
+        return (b.volume || 0) - (a.volume || 0);
+      }
+      // Both upcoming: sort by end_date ASC (soonest start first)
+      const aEnd = a.end_date_iso ? new Date(a.end_date_iso).getTime() : Infinity;
+      const bEnd = b.end_date_iso ? new Date(b.end_date_iso).getTime() : Infinity;
+      return aEnd - bEnd;
     });
 
     const events = merged;
@@ -266,7 +269,7 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     const topLeagueOrder = taxonomy ? await getTopLeagueOrder() : null;
 
     return NextResponse.json(
-      { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}), ...(topLeagueOrder ? { topLeagueOrder } : {}), _diag: { ...diag, merged: merged.length, liveIds: Array.from(liveIds).slice(0, 20) } },
+      { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}), ...(topLeagueOrder ? { topLeagueOrder } : {}) },
       { headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30' } }
     );
   } catch (err) {
