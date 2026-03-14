@@ -454,27 +454,14 @@ export function buildMatchInfo(event: PMEvent): MatchInfo | null {
     abbr2 = slugParts[2]?.toUpperCase() || abbr2;
   }
 
-  // Determine league from title suffix, tags, or sport prefix
-  // Prefer full names from tags (e.g., "League of Legends" not "LoL")
-  const TAG_FULL_NAMES: Record<string, string> = {
-    'league-of-legends': 'League of Legends', 'counter-strike-2': 'Counter-Strike 2',
-    'dota-2': 'Dota 2', valorant: 'Valorant', 'honor-of-kings': 'Honor of Kings',
-    'call-of-duty': 'Call of Duty', overwatch: 'Overwatch', 'rocket-league': 'Rocket League',
-    nba: 'NBA', nfl: 'NFL', nhl: 'NHL', mlb: 'MLB',
-    epl: 'EPL', ucl: 'UCL', 'la-liga': 'La Liga', 'serie-a': 'Serie A',
-    mls: 'MLS', bundesliga: 'Bundesliga', 'ligue-1': 'Ligue 1',
-    ufc: 'UFC', boxing: 'Boxing', tennis: 'Tennis', golf: 'Golf',
-    cricket: 'Cricket', f1: 'Formula 1', chess: 'Chess',
-    'table-tennis': 'Table Tennis', rugby: 'Rugby', baseball: 'Baseball',
-    ncaab: 'NCAAB', 'ncaa-basketball': 'NCAAB', 'march-madness': 'March Madness',
-  };
+  // Determine league from title suffix or tag labels (auto, not hardcoded)
+  const GENERIC_TAGS = new Set(['sports', 'esports', 'games']);
   let league = leagueInfo?.trim() || '';
   if (!league) {
-    // Try to get full name from event tags (skip generic 'sports'/'esports'/'games')
-    const GENERIC_TAGS = new Set(['sports', 'esports', 'games']);
+    // Use the tag label directly from Polymarket (e.g., tag.label = "League of Legends")
     for (const t of (event.tags || [])) {
       if (GENERIC_TAGS.has(t.slug)) continue;
-      if (TAG_FULL_NAMES[t.slug]) { league = TAG_FULL_NAMES[t.slug]; break; }
+      if (t.label) { league = t.label; break; }
     }
   }
   if (!league) league = sport || 'Sports';

@@ -1011,7 +1011,7 @@ function buildStandaloneMatch(mRow: any, tokens: Token[]): MatchInfo | null {
     abbr2 = slugParts[2]?.toUpperCase() || abbr2;
   }
 
-  const tags = (mRow.tags || []).map((t: any) => t.slug);
+  const tags = (mRow.tags || []).map((t: any) => ({ slug: t.slug, label: t.label }));
   const league = deriveLeague(tags);
   const endDate = new Date(mRow.end_date_iso || '');
   let status: 'upcoming' | 'live' | 'final' = 'upcoming';
@@ -1034,19 +1034,11 @@ function buildStandaloneMatch(mRow: any, tokens: Token[]): MatchInfo | null {
   };
 }
 
-function deriveLeague(tags: string[]): string {
-  const map: Record<string, string> = {
-    nba: 'NBA', nhl: 'NHL', nfl: 'NFL', mlb: 'MLB', epl: 'EPL', ucl: 'UCL',
-    'la-liga': 'La Liga', soccer: 'Soccer', tennis: 'Tennis', cricket: 'Cricket',
-    golf: 'Golf', ufc: 'UFC', boxing: 'Boxing', chess: 'Chess', f1: 'Formula 1',
-    'league-of-legends': 'League of Legends', 'counter-strike-2': 'Counter-Strike 2', 'dota-2': 'Dota 2',
-    valorant: 'Valorant', esports: 'Esports', baseball: 'Baseball', hockey: 'Hockey',
-    rugby: 'Rugby', 'united-rugby-championship': 'URC', 'rugby-premiership': 'Premiership Rugby',
-    ncaa: 'NCAA', 'ncaa-basketball': 'NCAAB', nbl: 'NBL', kbl: 'KBL', lnb: 'LNB',
-    'basketball-champions-league': 'BCL', 'table-tennis': 'Table Tennis', 'ping-pong': 'Table Tennis',
-    'honor-of-kings': 'Honor of Kings', 'call-of-duty': 'Call of Duty', overwatch: 'Overwatch',
-    wbc: 'WBC',
-  };
-  for (const t of tags) { if (map[t]) return map[t]; }
+function deriveLeague(tags: { slug: string; label: string }[]): string {
+  const GENERIC = new Set(['sports', 'esports', 'games']);
+  for (const t of tags) {
+    if (GENERIC.has(t.slug)) continue;
+    if (t.label) return t.label;
+  }
   return 'Sports';
 }
