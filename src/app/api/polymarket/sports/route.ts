@@ -207,6 +207,13 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     if (allEvents.length === 0) return null;
 
+    // Build map of event ID → actual match start time (for sorting upcoming events)
+    const startTimeMap = new Map<string, string>();
+    for (const ev of allEvents) {
+      const st = (ev as any).startTime;
+      if (st) startTimeMap.set(ev.id, st);
+    }
+
     // Process through existing pipeline
     const rawEvents: EventGroup[] = [];
     for (const ev of allEvents) {
@@ -258,10 +265,10 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
         // Both live: sort by volume DESC
         return (b.volume || 0) - (a.volume || 0);
       }
-      // Both upcoming: sort by end_date ASC (soonest start first)
-      const aEnd = a.end_date_iso ? new Date(a.end_date_iso).getTime() : Infinity;
-      const bEnd = b.end_date_iso ? new Date(b.end_date_iso).getTime() : Infinity;
-      return aEnd - bEnd;
+      // Both upcoming: sort by startTime ASC (actual match start, not market close)
+      const aStart = startTimeMap.get(a.id) || a.end_date_iso || '';
+      const bStart = startTimeMap.get(b.id) || b.end_date_iso || '';
+      return aStart.localeCompare(bStart);
     });
 
     const events = merged;
