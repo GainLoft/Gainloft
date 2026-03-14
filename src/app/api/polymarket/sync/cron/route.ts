@@ -151,27 +151,35 @@ export async function GET(req: NextRequest) {
       assignLeagues();
 
       // Step 3b: Connect orphans via name matching or indirect co-occurrence
-      for (const slug of Array.from(sportRelated)) {
-        if (parentSports[slug] || leagueToSport[slug] || slug === 'sports' || slug === 'esports') continue;
-        // Direct: slug contains a parent sport name (e.g., "college-football" → football)
-        for (const parent of Object.keys(parentSports)) {
-          if (parent.length >= 4 && slug.includes(parent)) {
-            leagueToSport[slug] = parent;
-            break;
+      // Loop until no more assignments (handles chains like cfb → college-football → football)
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const slug of Array.from(sportRelated)) {
+          if (parentSports[slug] || leagueToSport[slug] || slug === 'sports' || slug === 'esports') continue;
+          // Direct: slug contains a parent sport name (e.g., "college-football" → football)
+          for (const parent of Object.keys(parentSports)) {
+            if (parent.length >= 4 && slug.includes(parent)) {
+              leagueToSport[slug] = parent;
+              changed = true;
+              break;
+            }
           }
-        }
-        if (leagueToSport[slug]) continue;
-        // Indirect: co-occurring tag is already a league → assign same parent
-        const cos = coOcc[slug] || {};
-        let bestParent: string | null = null;
-        let bestCoOcc = 0;
-        for (const [co, coCount] of Object.entries(cos)) {
-          if (leagueToSport[co] && coCount > bestCoOcc) {
-            bestParent = leagueToSport[co];
-            bestCoOcc = coCount;
+          if (leagueToSport[slug]) continue;
+          // Indirect: co-occurring tag is already a league → assign same parent
+          // Require ≥10% co-occurrence to avoid noise
+          const cos = coOcc[slug] || {};
+          const count = tagCount[slug];
+          let bestParent: string | null = null;
+          let bestCoOcc = 0;
+          for (const [co, coCount] of Object.entries(cos)) {
+            if (leagueToSport[co] && coCount / count >= 0.1 && coCount > bestCoOcc) {
+              bestParent = leagueToSport[co];
+              bestCoOcc = coCount;
+            }
           }
+          if (bestParent) { leagueToSport[slug] = bestParent; changed = true; }
         }
-        if (bestParent) leagueToSport[slug] = bestParent;
       }
 
       // Step 4: Orphan sport-related tags with ≥20 events → promote to parent sport
