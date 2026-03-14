@@ -26,7 +26,18 @@ export async function GET(req: NextRequest) {
 
     await pool.query(`CREATE TABLE IF NOT EXISTS api_cache (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
 
-    // ═══ FAST DB OPERATIONS FIRST (run before slow HTTP calls) ═══
+    // ═══ PRIORITY: Sync new events from Polymarket FIRST ═══
+    // This must run before cache-building so new live matches appear immediately
+    try {
+      const newRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'new', maxPages: 5 }),
+      }).catch(() => null);
+      if (newRes?.ok) gapfillStats.new = await newRes.json();
+    } catch { /* continue even if this fails */ }
+
+    // ═══ FAST DB OPERATIONS (taxonomy + cache, now includes freshly synced events) ═══
 
     // 1. Auto-detect sport taxonomy from co-occurrence
     // Parent sports are identified by universal sport names + diversity fallback.
@@ -418,15 +429,7 @@ export async function GET(req: NextRequest) {
 
     // ═══ SLOW HTTP OPERATIONS (gapfill + resolution) ═══
 
-    // 4. Discover brand new events
-    const newRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
-      method: 'POST', cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'new', maxPages: 5 }),
-    }).catch(() => null);
-    if (newRes?.ok) gapfillStats.new = await newRes.json();
-
-    // 5. Refresh top 300 events by volume
+    // 4. Refresh top 300 events by volume (updates prices)
     const refreshRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
       method: 'POST', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
