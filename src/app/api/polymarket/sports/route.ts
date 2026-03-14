@@ -282,11 +282,8 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
       if (!leagueGroups.has(key)) leagueGroups.set(key, []);
       leagueGroups.get(key)!.push(ev);
     }
-    // Sort within each group by volume DESC
+    // Preserve API response order within each group (matches Polymarket)
     const groupEntries = Array.from(leagueGroups.entries());
-    for (const [, group] of groupEntries) {
-      group.sort((a, b) => (b.volume || 0) - (a.volume || 0));
-    }
     // Sort groups by total group volume DESC (like Polymarket)
     const sortedGroups = groupEntries
       .sort(([, a], [, b]) => {

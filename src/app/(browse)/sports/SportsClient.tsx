@@ -884,19 +884,16 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         grouped[slug].push(eg);
       }
     });
-    for (const key of Object.keys(grouped)) {
-      if (isFiltered) {
-        // Filtered: sort by start time ASC
+    if (isFiltered) {
+      for (const key of Object.keys(grouped)) {
         grouped[key].sort((a, b) => {
           const aTime = new Date(a.match!.start_time || a.end_date_iso || '').getTime();
           const bTime = new Date(b.match!.start_time || b.end_date_iso || '').getTime();
           return aTime - bTime;
         });
-      } else {
-        // Main view: sort within league by volume DESC (like Polymarket)
-        grouped[key].sort((a, b) => (b.volume || 0) - (a.volume || 0));
       }
     }
+    // Main view: preserve API response order within each league (matches Polymarket)
   }
 
   const sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
