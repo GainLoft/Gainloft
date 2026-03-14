@@ -340,7 +340,7 @@ async function upsertEvent(e: any) {
 
   const markets = allMarkets.slice(0, MAX_MARKETS_PER_EVENT);
   const isMulti = allMarkets.length > 1 || e.negRisk;
-  const tagList = (e.tags || []).map((t: any) => ({ slug: t.slug, label: t.label }));
+  const tagList = (e.tags || []).map((t: any) => ({ slug: t.slug, label: t.label, ...(t.forceHide ? { forceHide: true } : {}) }));
   const tags = JSON.stringify(tagList);
 
   const rawCategory = e.category;

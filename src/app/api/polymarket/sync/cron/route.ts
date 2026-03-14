@@ -28,7 +28,10 @@ export async function GET(req: NextRequest) {
 
     // ═══ FAST DB OPERATIONS FIRST (run before slow HTTP calls) ═══
 
-    // 1. Auto-detect sport taxonomy from tag co-occurrence
+    // 1. Auto-detect sport taxonomy from co-occurrence
+    // Parent sports are identified by universal sport names + diversity fallback.
+    // Leagues are auto-detected via co-occurrence with parent sports.
+    // Sort order is fully automatic (by volume).
     try {
       const { rows: sportEvents } = await pool.query(`
         SELECT tags FROM event_groups
@@ -42,7 +45,17 @@ export async function GET(req: NextRequest) {
           AND closed = false
       `);
 
+      // Non-sport tags to ignore in taxonomy
       const META = new Set(['all','featured','hide-from-new','speculation','pop-culture','celebrities','politics','trump','geopolitics','business','economy','parlays','music','streaming','games','internet-culture','crypto','cryptocurrency','fight','boxingmma','combats','netflix','twitter','x','solana','sol','memecoins','ukraine','russia','peace','putin','zelenskyy','ukraine-peace-deal','china','olympics','skiing','todays-sports','streamer','bush','mss']);
+
+      // Universal sport names — stable constants, not Polymarket-specific.
+      // Leagues (nba, nfl, epl, etc.) are auto-detected via co-occurrence.
+      const SPORT_NAMES = new Set([
+        'basketball', 'soccer', 'football', 'baseball', 'hockey', 'tennis',
+        'cricket', 'golf', 'rugby', 'boxing', 'chess', 'lacrosse', 'pickleball',
+        'table-tennis', 'ping-pong', 'wrestling', 'swimming', 'volleyball',
+        'badminton', 'cycling', 'motorsport', 'esports',
+      ]);
 
       const tagCount: Record<string, number> = {};
       const tagLabel: Record<string, string> = {};
@@ -80,7 +93,15 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Compute diversity (unique sport-related co-occurring tags)
+      // Step 1: Parent sports = sport-related tags whose slug is a universal sport name
+      const parentSports: Record<string, string> = {};
+      for (const slug of Array.from(sportRelated)) {
+        if (SPORT_NAMES.has(slug) && tagCount[slug] >= 1) {
+          parentSports[slug] = tagLabel[slug] || slug;
+        }
+      }
+
+      // Step 2: Also promote via diversity (catches things like 'ufc', 'f1' not in SPORT_NAMES)
       const diversity: Record<string, number> = {};
       for (const slug of Array.from(sportRelated)) {
         const cos = coOcc[slug] || {};
@@ -90,45 +111,39 @@ export async function GET(req: NextRequest) {
         }
         diversity[slug] = div;
       }
-
-      // Find parent using DIVERSITY (parent sports have higher diversity than leagues)
-      const parentOf: Record<string, string> = {};
       for (const slug of Array.from(sportRelated)) {
-        const count = tagCount[slug];
-        const cos = coOcc[slug] || {};
-        const myDiv = diversity[slug] || 0;
-        let bestParent: string | null = null;
-        let bestDiv = Infinity;
-        for (const [co, coCount] of Object.entries(cos)) {
-          if (co === slug || META.has(co)) continue;
-          if (!sportRelated.has(co) && co !== 'sports') continue;
-          if (coCount / count < 0.15) continue;
-          const coDiv = (co === 'sports') ? 9999 : (diversity[co] || 0);
-          if (coDiv <= myDiv) continue;
-          if (coDiv < bestDiv) { bestParent = co; bestDiv = coDiv; }
-        }
-        if (bestParent) parentOf[slug] = bestParent;
-      }
-
-      // Level 1: parent sports = direct children of 'sports'
-      const parentSports: Record<string, string> = {};
-      for (const [slug, par] of Object.entries(parentOf)) {
-        if (par === 'sports') parentSports[slug] = tagLabel[slug] || slug;
-      }
-
-      // Level 2: leagues = children/grandchildren of parent sports
-      const leagueToSport: Record<string, string> = {};
-      for (const [slug, par] of Object.entries(parentOf)) {
-        if (parentSports[slug] || par === 'sports') continue;
-        if (parentSports[par]) {
-          leagueToSport[slug] = par;
-        } else {
-          const gp = parentOf[par];
-          if (gp && parentSports[gp]) leagueToSport[slug] = gp;
-          else if (gp) {
-            const ggp = parentOf[gp];
-            if (ggp && parentSports[ggp]) leagueToSport[slug] = ggp;
+        if (parentSports[slug]) continue;
+        // High diversity + co-occurs with sports root → parent sport
+        if ((diversity[slug] || 0) >= 5) {
+          const cos = coOcc[slug] || {};
+          const count = tagCount[slug];
+          if (cos['sports'] && cos['sports'] / count >= 0.15) {
+            parentSports[slug] = tagLabel[slug] || slug;
           }
+        }
+      }
+
+      // Step 3: Leagues = non-parent sport-related tags → find best parent via co-occurrence
+      const leagueToSport: Record<string, string> = {};
+      for (const slug of Array.from(sportRelated)) {
+        if (parentSports[slug] || slug === 'sports' || slug === 'esports') continue;
+        const cos = coOcc[slug] || {};
+        const count = tagCount[slug];
+        let bestParent: string | null = null;
+        let bestCoOcc = 0;
+        for (const [co, coCount] of Object.entries(cos)) {
+          if (!parentSports[co]) continue;
+          if (coCount / count < 0.05) continue; // must co-occur on ≥5%
+          if (coCount > bestCoOcc) { bestParent = co; bestCoOcc = coCount; }
+        }
+        if (bestParent) leagueToSport[slug] = bestParent;
+      }
+
+      // Step 4: Orphan sport-related tags with ≥15 events → promote to parent sport
+      for (const slug of Array.from(sportRelated)) {
+        if (parentSports[slug] || leagueToSport[slug] || slug === 'sports' || slug === 'esports') continue;
+        if (tagCount[slug] >= 15) {
+          parentSports[slug] = tagLabel[slug] || slug;
         }
       }
 
