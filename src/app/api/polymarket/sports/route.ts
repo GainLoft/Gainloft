@@ -98,9 +98,9 @@ function isMatchSettled(ev: PMEvent): boolean {
   // Hard cutoff: any match > 3 hours past its end_date is over
   if (hoursPast > 3) return true;
 
-  // Zero-volume matches past their end date are dead
+  // Low-volume matches past their end date are dead
   const totalVol = ev.volume ? parseFloat(String(ev.volume)) : 0;
-  if (isPast && totalVol < 1) return true;
+  if (isPast && totalVol < 500) return true;
 
   // For esports: always check settlement (they can settle mid-match)
   // For traditional sports: only check if end date has passed
@@ -1036,7 +1036,7 @@ function buildStandaloneMatch(mRow: any, tokens: Token[]): MatchInfo | null {
   let status: 'upcoming' | 'live' | 'final' = 'upcoming';
   const mVol = parseFloat(mRow.volume) || 0;
   if (mRow.closed || hPast > 3) status = 'final';
-  else if (endDate < now && mVol < 1) status = 'final';
+  else if (endDate < now && mVol < 500) status = 'final';
   else if (endDate < now) status = 'live';
 
   return {

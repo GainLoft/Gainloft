@@ -499,8 +499,8 @@ export function buildMatchInfo(event: PMEvent): MatchInfo | null {
     status = 'final';
   } else if (endDate < now) {
     // End date passed but within 3 hours
-    // Zero-volume matches with past endDate are dead — mark final
-    if (totalVolume < 1) {
+    // Low-volume matches with past endDate are dead — mark final
+    if (totalVolume < 500) {
       status = 'final';
     } else {
       const nonPH = event.markets.filter(m => !isPlaceholder(m));
