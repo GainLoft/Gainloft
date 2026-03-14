@@ -559,7 +559,9 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
   // Build sport map from auto-detected taxonomy
   const sportMap: Record<string, { label: string; count: number; volume: number; leagues: { slug: string; label: string; count: number; volume: number }[] }> = {};
 
-  for (const [slug, label] of Object.entries(parentSports)) {
+  for (const [slug, rawLabel] of Object.entries(parentSports)) {
+    // Capitalize first letter of each word
+    const label = rawLabel.replace(/\b\w/g, c => c.toUpperCase());
     sportMap[slug] = { label, count: 0, volume: 0, leagues: [] };
     if (tagCounts[slug]) {
       sportMap[slug].count = tagCounts[slug].count;
