@@ -621,11 +621,22 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
     sport.leagues.sort((a, b) => b.volume - a.volume);
   }
 
-  // Sort parent sports by volume desc
+  // Sort parent sports by Polymarket's curated order, then volume for unlisted
+  const SPORT_ORDER: Record<string, number> = {
+    basketball: 1, soccer: 2, esports: 3, tennis: 4, cricket: 5,
+    hockey: 6, rugby: 7, 'table-tennis': 8, ufc: 9, football: 10,
+    golf: 11, formula1: 12, chess: 13, boxing: 14, pickleball: 15,
+    lacrosse: 16, baseball: 17,
+  };
   return Object.entries(sportMap)
     .filter(([, v]) => v.count > 0)
     .map(([slug, v]) => ({ slug, label: v.label, count: v.count, volume: v.volume, leagues: v.leagues }))
-    .sort((a, b) => b.volume - a.volume);
+    .sort((a, b) => {
+      const oa = SPORT_ORDER[a.slug] ?? 100;
+      const ob = SPORT_ORDER[b.slug] ?? 100;
+      if (oa !== ob) return oa - ob;
+      return b.volume - a.volume; // fallback for unlisted sports
+    });
 }
 
 // ═══════════════════════════════════════════════════
