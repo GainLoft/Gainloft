@@ -494,17 +494,23 @@ export function buildMatchInfo(event: PMEvent): MatchInfo | null {
   const now = new Date();
   const hoursPast = (now.getTime() - endDate.getTime()) / (1000 * 60 * 60);
   let status: 'upcoming' | 'live' | 'final' = 'upcoming';
+  const totalVolume = event.volume ? parseFloat(String(event.volume)) : 0;
   if (event.closed || hoursPast > 3) {
     status = 'final';
   } else if (endDate < now) {
-    // End date passed but within 3 hours — check if result is already decided
-    const nonPH = event.markets.filter(m => !isPlaceholder(m));
-    const hasDecisivePrice = nonPH.some(m => {
-      const prices = parseArr(m.outcomePrices);
-      const p = parseFloat(prices[0] || '0.5');
-      return p > 0.92 || p < 0.08;
-    });
-    status = hasDecisivePrice ? 'final' : 'live';
+    // End date passed but within 3 hours
+    // Zero-volume matches with past endDate are dead — mark final
+    if (totalVolume < 1) {
+      status = 'final';
+    } else {
+      const nonPH = event.markets.filter(m => !isPlaceholder(m));
+      const hasDecisivePrice = nonPH.some(m => {
+        const prices = parseArr(m.outcomePrices);
+        const p = parseFloat(prices[0] || '0.5');
+        return p > 0.92 || p < 0.08;
+      });
+      status = hasDecisivePrice ? 'final' : 'live';
+    }
   } else {
     // Detect in-progress matches: if any "Game X Winner" market has settled
     // (price near 0 or 1) while the Match Winner is still active, match is live
