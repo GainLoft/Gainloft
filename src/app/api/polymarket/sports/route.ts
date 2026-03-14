@@ -224,8 +224,13 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     }
 
     const merged = mergeMatchEvents(rawEvents);
-    // Sort by volume24hr DESC — same as Polymarket
-    merged.sort((a, b) => (b.volume || 0) - (a.volume || 0));
+    // Sort: live first by volume DESC, then upcoming by volume DESC
+    merged.sort((a, b) => {
+      const aLive = a.match?.status === 'live' ? 0 : 1;
+      const bLive = b.match?.status === 'live' ? 0 : 1;
+      if (aLive !== bLive) return aLive - bLive;
+      return (b.volume || 0) - (a.volume || 0);
+    });
 
     const events = merged;
     const total = events.length;
