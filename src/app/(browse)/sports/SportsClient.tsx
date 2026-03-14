@@ -308,11 +308,14 @@ function MatchCard({
   );
 
   const gameLabel = m.league.split(' ').slice(0, 3).join(' ');
-  const statusLabel = m.status === 'live' ? 'LIVE'
+  const statusLabel = m.status === 'live'
+    ? (m.status_detail || '')
     : m.status === 'final' ? 'FINAL'
     : m.status_detail || new Date(m.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  const headerLeft = m.status_detail && m.status === 'live'
-    ? m.status_detail
+  // For live: badge shows league + status_detail (e.g. "LoL · Map 2"), no duplicate "LIVE"
+  // For non-live: badge shows league + time/status
+  const headerLeft = m.status === 'live'
+    ? (statusLabel ? `${gameLabel} \u00b7 ${statusLabel}` : gameLabel)
     : `${gameLabel} \u00b7 ${statusLabel}`;
 
   const gameViewCount = m.game_views ?? m.market_types.length;
@@ -347,7 +350,7 @@ function MatchCard({
             fontSize: 14, color: 'var(--text-muted)', fontWeight: 500,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
-            {fmtVol(event.volume)} Vol.&middot; {m.league}
+            {fmtVol(event.volume)} Vol.
           </span>
         </div>
         <Link href={`/event/${event.slug}`} onClick={(e) => e.stopPropagation()} style={{ textDecoration: 'none', flexShrink: 0 }}>
@@ -610,9 +613,10 @@ interface SportsClientProps {
   initialTaxonomy: TaxonomyItem[];
   initialHasMore: boolean;
   initialTotal: number;
+  initialTopLeagueOrder?: string[];
 }
 
-export default function SportsClient({ initialEvents, initialTaxonomy, initialHasMore, initialTotal }: SportsClientProps) {
+export default function SportsClient({ initialEvents, initialTaxonomy, initialHasMore, initialTotal, initialTopLeagueOrder }: SportsClientProps) {
   const [viewTab, setViewTab] = useState<'live' | 'futures'>('live');
   const [activeFilter, setActiveFilter] = useState<{ type: 'sport' | 'league'; slug: string; sport?: string } | null>(null);
   const [expandedSports, setExpandedSports] = useState<Set<string>>(new Set());
@@ -628,7 +632,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   /* ── Infinite scroll state ── */
   const [events, setEvents] = useState<EventGroup[]>(initialEvents);
   const [taxonomy, setTaxonomy] = useState<TaxonomyItem[]>(initialTaxonomy);
-  const [topLeagueOrder, setTopLeagueOrder] = useState<string[] | null>(null);
+  const [topLeagueOrder, setTopLeagueOrder] = useState<string[] | null>(initialTopLeagueOrder || null);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [total, setTotal] = useState(initialTotal);
   const [isLoading, setIsLoading] = useState(initialEvents.length === 0);
@@ -689,13 +693,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     }
   }, [buildUrl]);
 
-  /* ── Refresh taxonomy on mount (ISR cache may be stale) ── */
-  useEffect(() => {
-    fetch(`/api/polymarket/sports?tab=${viewTab}&offset=0&limit=1`)
-      .then(r => r.json())
-      .then(data => { if (data.taxonomy) { setTaxonomy(data.taxonomy); if (data.topLeagueOrder) setTopLeagueOrder(data.topLeagueOrder); } })
-      .catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  /* ── No mount taxonomy refresh needed — page is force-dynamic, server always returns fresh data ── */
 
   /* ── Reset & fetch first page when filters change ── */
   const initialLoadRef = useRef(true);
