@@ -1007,12 +1007,13 @@ function deriveLeague(tags: string[]): string {
   const map: Record<string, string> = {
     nba: 'NBA', nhl: 'NHL', nfl: 'NFL', mlb: 'MLB', epl: 'EPL', ucl: 'UCL',
     'la-liga': 'La Liga', soccer: 'Soccer', tennis: 'Tennis', cricket: 'Cricket',
-    golf: 'Golf', ufc: 'UFC', boxing: 'Boxing', chess: 'Chess', f1: 'F1',
-    'league-of-legends': 'LoL', 'counter-strike-2': 'CS2', 'dota-2': 'Dota 2',
+    golf: 'Golf', ufc: 'UFC', boxing: 'Boxing', chess: 'Chess', f1: 'Formula 1',
+    'league-of-legends': 'League of Legends', 'counter-strike-2': 'Counter-Strike 2', 'dota-2': 'Dota 2',
     valorant: 'Valorant', esports: 'Esports', baseball: 'Baseball', hockey: 'Hockey',
     rugby: 'Rugby', 'united-rugby-championship': 'URC', 'rugby-premiership': 'Premiership Rugby',
-    ncaa: 'NCAA', 'ncaa-basketball': 'NCAA Basketball', nbl: 'NBL', kbl: 'KBL', lnb: 'LNB',
+    ncaa: 'NCAA', 'ncaa-basketball': 'NCAAB', nbl: 'NBL', kbl: 'KBL', lnb: 'LNB',
     'basketball-champions-league': 'BCL', 'table-tennis': 'Table Tennis', 'ping-pong': 'Table Tennis',
+    'honor-of-kings': 'Honor of Kings', 'call-of-duty': 'Call of Duty', overwatch: 'Overwatch',
     wbc: 'WBC',
   };
   for (const t of tags) { if (map[t]) return map[t]; }
