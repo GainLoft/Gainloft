@@ -151,8 +151,116 @@ function isPlaceholderMarket(pm: PMMarket): boolean {
   return parseField(pm.outcomePrices).length === 0;
 }
 
+const GAMMA_API = 'https://gamma-api.polymarket.com';
+
+/** Fetch live sports directly from Polymarket's Gamma API (real-time, same data as polymarket.com/sports) */
+async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
+  try {
+    const now = new Date();
+    // Fetch events ending within the next 24 hours (covers live + starting soon)
+    const minEnd = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString(); // 3h ago
+    const params = (tag: string) => new URLSearchParams({
+      active: 'true', closed: 'false', tag_slug: tag,
+      order: 'endDate', ascending: 'true',
+      end_date_min: minEnd, limit: '100',
+    });
+
+    const [sportsRes, esportsRes] = await Promise.all([
+      fetch(`${GAMMA_API}/events?${params('sports')}`, {
+        cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(8000),
+      }),
+      fetch(`${GAMMA_API}/events?${params('esports')}`, {
+        cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(8000),
+      }),
+    ]);
+
+    if (!sportsRes.ok && !esportsRes.ok) return null;
+
+    const sportsEvents: PMEvent[] = sportsRes.ok ? await sportsRes.json() : [];
+    const esportsEvents: PMEvent[] = esportsRes.ok ? await esportsRes.json() : [];
+
+    // Deduplicate by ID
+    const seen = new Set<string>();
+    const allEvents: PMEvent[] = [];
+    for (const ev of [...sportsEvents, ...esportsEvents]) {
+      if (seen.has(ev.id)) continue;
+      seen.add(ev.id);
+      // Only "vs" matches
+      if (!/vs\.?/i.test(ev.title)) continue;
+      allEvents.push(ev);
+    }
+
+    // Process through existing pipeline
+    const rawEvents: EventGroup[] = [];
+    for (const ev of allEvents) {
+      if (ev.closed) continue;
+      if (isMatchSettled(ev)) continue;
+      const matchInfo = buildMatchInfo(ev);
+      if (!matchInfo || matchInfo.status === 'final') continue;
+
+      const nonPlaceholder = (ev.markets || []).filter(m => !isPlaceholderMarket(m));
+      const moneyline = nonPlaceholder.find(m =>
+        !m.groupItemTitle && m.question === ev.title
+      ) || nonPlaceholder.find(m =>
+        m.groupItemTitle === 'Match Winner' || m.question === 'Match Winner'
+      ) || nonPlaceholder.find(m =>
+        /moneyline/i.test(m.groupItemTitle || '')
+      );
+      const others = nonPlaceholder.filter(m => m !== moneyline).slice(0, moneyline ? 2 : 3);
+      const orderedMarkets = moneyline ? [moneyline, ...others] : others;
+      const mappedMarkets = orderedMarkets.map(m => mapToMarket(ev, m));
+
+      rawEvents.push({
+        id: ev.id, title: ev.title, slug: ev.slug,
+        description: null,
+        category: ev.tags?.[0]?.label || 'Sports',
+        tags: ev.tags?.map(t => ({ slug: t.slug, label: t.label })) || [],
+        image_url: ev.image || null, end_date_iso: ev.endDate || null,
+        volume: ev.volume || 0, liquidity: ev.liquidity || 0,
+        created_at: ev.createdAt || ev.creationDate || new Date().toISOString(),
+        markets: mappedMarkets.map(m => ({ ...m, description: null })),
+        match: matchInfo,
+      });
+    }
+
+    const merged = mergeMatchEvents(rawEvents);
+    // Sort by endDate ASC — same as Polymarket
+    merged.sort((a, b) => {
+      const aLive = a.match?.status === 'live' ? 0 : 1;
+      const bLive = b.match?.status === 'live' ? 0 : 1;
+      if (aLive !== bLive) return aLive - bLive;
+      const aTime = new Date(a.end_date_iso || '').getTime();
+      const bTime = new Date(b.end_date_iso || '').getTime();
+      return aTime - bTime;
+    });
+
+    const events = merged;
+    const total = events.length;
+    const trimmed = events.slice(0, limit);
+    const hasMore = trimmed.length < total;
+    const taxonomy = await buildTaxonomyFromDB();
+    const topLeagueOrder = taxonomy ? await getTopLeagueOrder() : null;
+
+    return NextResponse.json(
+      { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}), ...(topLeagueOrder ? { topLeagueOrder } : {}) },
+      { headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30' } }
+    );
+  } catch (err) {
+    console.error('[sports] Gamma API fetch failed:', err);
+    return null;
+  }
+}
+
 async function handleMatches(offset: number, limit: number, sportFilter: string, leagueFilter: string) {
-  // Try precomputed cache for unfiltered first page (fastest path)
+  // PRIMARY: Fetch directly from Polymarket's Gamma API (real-time data)
+  if (!sportFilter && !leagueFilter && offset === 0) {
+    const gammaResult = await fetchFromGammaAPI(limit);
+    if (gammaResult) return gammaResult;
+  }
+
+  // FALLBACK: Use DB cache if Gamma API fails
   if (!sportFilter && !leagueFilter && offset === 0) {
     try {
       const { rows: cacheRows } = await pool.query(
