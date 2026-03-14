@@ -24,77 +24,12 @@ export async function GET(req: NextRequest) {
     if (!baseUrl) throw new Error('No SITE_URL or VERCEL_URL configured');
     const secretParam = cronSecret ? `?secret=${cronSecret}` : '';
 
-    // 1. Discover brand new events (newest IDs first, no active filter)
-    const newRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
-      method: 'POST', cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'new', maxPages: 5 }),
-    }).catch(() => null);
-    if (newRes?.ok) gapfillStats.new = await newRes.json();
+    await pool.query(`CREATE TABLE IF NOT EXISTS api_cache (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
 
-    // 2. Refresh top 300 events by volume (updates prices, resolution, closed status)
-    const refreshRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
-      method: 'POST', cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'refresh', limit: 300 }),
-    }).catch(() => null);
-    if (refreshRes?.ok) gapfillStats.refresh = await refreshRes.json();
+    // ═══ FAST DB OPERATIONS FIRST (run before slow HTTP calls) ═══
 
-    // 3. Full incremental sweep — 20 pages = 2,000 events per cron run
-    //    Covers ALL Polymarket events regardless of tags, updates existing ones too
-    //    At ~9,000 total events and 10-min cron interval, full sweep every ~50 minutes
-    const discoverRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
-      method: 'POST', cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'discover', maxPages: 20 }),
-    }).catch(() => null);
-    if (discoverRes?.ok) gapfillStats.discover = await discoverRes.json();
-
-    // 4. Resolution sync — check recently active markets for closed/resolved status
+    // 1. Auto-detect sport taxonomy from tag co-occurrence
     try {
-      const { rows: activeMarkets } = await pool.query(
-        `SELECT id, polymarket_id FROM markets
-         WHERE polymarket_id IS NOT NULL AND closed = false AND active = true
-         ORDER BY volume DESC LIMIT 100`
-      );
-
-      // Batch check resolution via events API (more efficient than per-market)
-      const batchSize = 20;
-      for (let i = 0; i < activeMarkets.length; i += batchSize) {
-        const batch = activeMarkets.slice(i, i + batchSize);
-        await Promise.allSettled(batch.map(async (market: any) => {
-          try {
-            const res = await fetch(
-              `${GAMMA_API}/markets/${market.polymarket_id}`,
-              { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } }
-            );
-            if (!res.ok) return;
-            const pm = await res.json();
-            if (pm.closed || !pm.active) {
-              await pool.query(
-                `UPDATE markets SET closed = $1, resolved = $2, active = $3, accepting_orders = false,
-                 winning_outcome = $4, resolved_at = $5
-                 WHERE id = $6`,
-                [
-                  pm.closed || false,
-                  !!pm.closedTime,
-                  pm.active !== false,
-                  pm.winningOutcome || null,
-                  pm.closedTime || null,
-                  market.id,
-                ]
-              );
-              totalResolved++;
-            }
-          } catch { /* skip */ }
-        }));
-      }
-    } catch { /* skip */ }
-
-    // 5. Auto-detect sport taxonomy from tag co-occurrence
-    try {
-      await pool.query(`CREATE TABLE IF NOT EXISTS api_cache (key TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT NOW())`);
-
       const { rows: sportEvents } = await pool.query(`
         SELECT tags FROM event_groups
         WHERE polymarket_id IS NOT NULL
@@ -132,23 +67,20 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Step 1: Identify sport-related tags (co-occur with 'sports' or 'esports' on ≥10%)
+      // Identify sport-related tags (co-occur with 'sports' or 'esports' on ≥10%)
       const sportRelated = new Set<string>();
       for (const slug of Object.keys(tagCount)) {
         if (slug === 'sports' || META.has(slug)) continue;
-        if (tagCount[slug] < 3) continue; // skip noise tags
+        if (tagCount[slug] < 3) continue;
         const cos = coOcc[slug] || {};
         const count = tagCount[slug];
-        // Sport-related if co-occurs with root 'sports' or 'esports'
         for (const root of ['sports', 'esports']) {
           if (slug === root) { sportRelated.add(slug); break; }
           if (cos[root] && cos[root] / count >= 0.1) { sportRelated.add(slug); break; }
         }
       }
 
-      // Step 2: Compute diversity (unique sport-related co-occurring tags)
-      // Parent sports (basketball, football, esports) have HIGH diversity — they co-occur with many leagues
-      // Leagues (nba, nfl, cs2) have LOW diversity — they mostly co-occur with one parent sport
+      // Compute diversity (unique sport-related co-occurring tags)
       const diversity: Record<string, number> = {};
       for (const slug of Array.from(sportRelated)) {
         const cos = coOcc[slug] || {};
@@ -159,32 +91,26 @@ export async function GET(req: NextRequest) {
         diversity[slug] = div;
       }
 
-      // Step 3: Find parent for each tag using DIVERSITY (not event count)
-      // Parent = co-occurring tag with higher diversity, most specific (lowest diversity among candidates)
+      // Find parent using DIVERSITY (parent sports have higher diversity than leagues)
       const parentOf: Record<string, string> = {};
       for (const slug of Array.from(sportRelated)) {
         const count = tagCount[slug];
         const cos = coOcc[slug] || {};
         const myDiv = diversity[slug] || 0;
-
         let bestParent: string | null = null;
         let bestDiv = Infinity;
-
         for (const [co, coCount] of Object.entries(cos)) {
           if (co === slug || META.has(co)) continue;
           if (!sportRelated.has(co) && co !== 'sports') continue;
-          if (coCount / count < 0.15) continue; // must co-occur on ≥15% of events
-
+          if (coCount / count < 0.15) continue;
           const coDiv = (co === 'sports') ? 9999 : (diversity[co] || 0);
-          if (coDiv <= myDiv) continue; // parent must have higher diversity
-
+          if (coDiv <= myDiv) continue;
           if (coDiv < bestDiv) { bestParent = co; bestDiv = coDiv; }
         }
-
         if (bestParent) parentOf[slug] = bestParent;
       }
 
-      // Level 1: parent sports = direct children of 'sports' root
+      // Level 1: parent sports = direct children of 'sports'
       const parentSports: Record<string, string> = {};
       for (const [slug, par] of Object.entries(parentOf)) {
         if (par === 'sports') parentSports[slug] = tagLabel[slug] || slug;
@@ -219,13 +145,13 @@ export async function GET(req: NextRequest) {
       console.error('Auto taxonomy error:', taxErr);
     }
 
-    // 5.5. Fix stale categories — ensure all sports-tagged events have category = 'Sports'
+    // 2. Fix stale categories
     try {
       await pool.query(`UPDATE event_groups SET category = 'Sports' WHERE category != 'Sports' AND (tags @> '[{"slug":"sports"}]'::jsonb OR tags @> '[{"slug":"esports"}]'::jsonb)`);
       await pool.query(`UPDATE markets SET category = 'Sports' WHERE category != 'Sports' AND (tags @> '[{"slug":"sports"}]'::jsonb OR tags @> '[{"slug":"esports"}]'::jsonb)`);
     } catch { /* skip */ }
 
-    // 6. Precompute sports cache
+    // 3. Precompute sports cache
     try {
       const [egResult, standaloneResult] = await Promise.all([
         pool.query(`
@@ -288,24 +214,81 @@ export async function GET(req: NextRequest) {
         tokenRows = rows;
       }
 
-      const cacheData = {
-        eventGroups: egResult.rows,
-        standaloneMarkets: standaloneResult.rows,
-        subMarkets: subMarketRows,
-        tokens: tokenRows,
-        cachedAt: new Date().toISOString(),
-      };
-
       await pool.query(
         `INSERT INTO api_cache (key, data, updated_at) VALUES ('sports_live', $1::jsonb, NOW())
          ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
-        [JSON.stringify(cacheData)]
+        [JSON.stringify({
+          eventGroups: egResult.rows,
+          standaloneMarkets: standaloneResult.rows,
+          subMarkets: subMarketRows,
+          tokens: tokenRows,
+          cachedAt: new Date().toISOString(),
+        })]
       );
     } catch (cacheErr) {
       console.error('Sports cache precompute error:', cacheErr);
     }
 
-    // 6. Warm caches
+    // ═══ SLOW HTTP OPERATIONS (gapfill + resolution) ═══
+
+    // 4. Discover brand new events
+    const newRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'new', maxPages: 5 }),
+    }).catch(() => null);
+    if (newRes?.ok) gapfillStats.new = await newRes.json();
+
+    // 5. Refresh top 300 events by volume
+    const refreshRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'refresh', limit: 300 }),
+    }).catch(() => null);
+    if (refreshRes?.ok) gapfillStats.refresh = await refreshRes.json();
+
+    // 6. Full incremental sweep — 20 pages = 2,000 events per cron run
+    const discoverRes = await fetch(`${baseUrl}/api/polymarket/sync/gapfill${secretParam}`, {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'discover', maxPages: 20 }),
+    }).catch(() => null);
+    if (discoverRes?.ok) gapfillStats.discover = await discoverRes.json();
+
+    // 7. Resolution sync
+    try {
+      const { rows: activeMarkets } = await pool.query(
+        `SELECT id, polymarket_id FROM markets
+         WHERE polymarket_id IS NOT NULL AND closed = false AND active = true
+         ORDER BY volume DESC LIMIT 100`
+      );
+      const batchSize = 20;
+      for (let i = 0; i < activeMarkets.length; i += batchSize) {
+        const batch = activeMarkets.slice(i, i + batchSize);
+        await Promise.allSettled(batch.map(async (market: any) => {
+          try {
+            const res = await fetch(
+              `${GAMMA_API}/markets/${market.polymarket_id}`,
+              { cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' } }
+            );
+            if (!res.ok) return;
+            const pm = await res.json();
+            if (pm.closed || !pm.active) {
+              await pool.query(
+                `UPDATE markets SET closed = $1, resolved = $2, active = $3, accepting_orders = false,
+                 winning_outcome = $4, resolved_at = $5
+                 WHERE id = $6`,
+                [pm.closed || false, !!pm.closedTime, pm.active !== false,
+                 pm.winningOutcome || null, pm.closedTime || null, market.id]
+              );
+              totalResolved++;
+            }
+          } catch { /* skip */ }
+        }));
+      }
+    } catch { /* skip */ }
+
+    // 8. Warm caches
     if (baseUrl) {
       const warmUrls = [
         `${baseUrl}/api/polymarket/sports?tab=live&offset=0&limit=30`,
@@ -315,8 +298,6 @@ export async function GET(req: NextRequest) {
         `${baseUrl}/api/polymarket/taxonomy`,
       ];
       await Promise.allSettled(warmUrls.map(url => fetch(url, { cache: 'no-store' }).catch(() => {})));
-      const pageUrls = [`${baseUrl}/`, `${baseUrl}/sports`, `${baseUrl}/breaking`, `${baseUrl}/new`];
-      await Promise.allSettled(pageUrls.map(url => fetch(url, { cache: 'no-store' }).catch(() => {})));
     }
   } catch (err) {
     return NextResponse.json({
