@@ -109,7 +109,7 @@ function LeagueIcon({ slug, size = 16 }: { slug: string; size?: number }) {
         width={size}
         height={size}
         style={{ width: size, height: size, borderRadius: 4, objectFit: 'cover' }}
-        loading="lazy"
+        loading="eager"
       />
     );
   }

@@ -38,6 +38,13 @@ const nextConfig = {
       ],
     },
     {
+      // Public images (league logos, sport icons): cache for 7 days
+      source: '/images/:path*',
+      headers: [
+        { key: 'Cache-Control', value: 'public, max-age=604800, stale-while-revalidate=2592000' },
+      ],
+    },
+    {
       // Optimized images: cache in browser for 1 hour
       source: '/_next/image',
       headers: [
