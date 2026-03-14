@@ -227,6 +227,34 @@ export async function GET(req: NextRequest) {
       // Re-run league assignment after orphan promotions
       assignLeagues();
 
+      // Step 5: Merge wrongly-promoted parents into their true parent
+      // If a parent sport's leagues contain another SPORT_NAMES parent's name,
+      // demote it to a league (e.g., cfb has league "college-football" → football)
+      const toMerge: [string, string][] = [];
+      for (const slug of Object.keys(parentSports)) {
+        if (SPORT_NAMES.has(slug)) continue; // don't demote named sports
+        const myLeagues = Object.entries(leagueToSport)
+          .filter(([, p]) => p === slug)
+          .map(([league]) => league);
+        for (const league of myLeagues) {
+          for (const otherParent of Object.keys(parentSports)) {
+            if (otherParent === slug) continue;
+            if (SPORT_NAMES.has(otherParent) && otherParent.length >= 4 && league.includes(otherParent)) {
+              toMerge.push([slug, otherParent]);
+              break;
+            }
+          }
+          if (toMerge.some(([child]) => child === slug)) break;
+        }
+      }
+      for (const [child, parent] of toMerge) {
+        delete parentSports[child];
+        leagueToSport[child] = parent;
+        for (const [league, p] of Object.entries(leagueToSport)) {
+          if (p === child) leagueToSport[league] = parent;
+        }
+      }
+
       await pool.query(
         `INSERT INTO api_cache (key, data, updated_at) VALUES ('sport_taxonomy_auto', $1::jsonb, NOW())
          ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
