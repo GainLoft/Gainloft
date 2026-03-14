@@ -157,10 +157,11 @@ const GAMMA_API = 'https://gamma-api.polymarket.com';
 async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
   try {
     const now = new Date();
+    const minEnd = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString();
     const params = (tag: string) => new URLSearchParams({
       active: 'true', closed: 'false', tag_slug: tag,
-      order: 'volume24hr', ascending: 'false',
-      limit: '50',
+      order: 'endDate', ascending: 'true',
+      end_date_min: minEnd, limit: '100',
     });
 
     const [sportsRes, esportsRes] = await Promise.all([
@@ -181,17 +182,11 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     // Deduplicate by ID, merge both tags
     const seen = new Set<string>();
-    const cutoff = now.getTime() + 4 * 60 * 60 * 1000; // only events ending within 4h
-    const minEnd = now.getTime() - 3 * 60 * 60 * 1000; // exclude events ended >3h ago
     const allEvents: PMEvent[] = [];
     for (const ev of [...sportsEvents, ...esportsEvents]) {
       if (seen.has(ev.id)) continue;
       seen.add(ev.id);
-      // Only "vs" matches
       if (!/vs\.?/i.test(ev.title)) continue;
-      // Time window: endDate between -3h and +4h from now
-      const endMs = ev.endDate ? new Date(ev.endDate).getTime() : 0;
-      if (endMs && (endMs > cutoff || endMs < minEnd)) continue;
       allEvents.push(ev);
     }
 
