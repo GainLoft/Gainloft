@@ -795,6 +795,12 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
     const rawEvents: EventGroup[] = [];
 
     for (const eg of eventGroups) {
+      // Hard skip: any event with end_date more than 12 hours ago
+      if (eg.end_date_iso) {
+        const hoursPast = (Date.now() - new Date(eg.end_date_iso).getTime()) / (1000 * 60 * 60);
+        if (hoursPast > 12) continue;
+      }
+
       const marketRows = allSubMarkets[eg.id] || [];
       if (marketRows.length === 0) continue;
 
@@ -830,6 +836,11 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
 
     // Process standalone markets
     for (const m of standaloneMarkets || []) {
+      // Hard skip: any market with end_date more than 12 hours ago
+      if (m.end_date_iso) {
+        const hoursPast = (Date.now() - new Date(m.end_date_iso).getTime()) / (1000 * 60 * 60);
+        if (hoursPast > 12) continue;
+      }
       const mTokens = tokensByMarket[m.id] || [];
       const matchInfo = buildStandaloneMatch(m, mTokens);
       if (!matchInfo) continue;
