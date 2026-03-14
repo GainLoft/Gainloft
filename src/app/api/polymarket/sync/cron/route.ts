@@ -150,18 +150,44 @@ export async function GET(req: NextRequest) {
       };
       assignLeagues();
 
-      // Step 4: Orphan sport-related tags with ≥15 events → promote to parent sport
-      // Only if they don't co-occur with ANY existing parent
+      // Step 3b: Connect orphans via name matching or indirect co-occurrence
+      for (const slug of Array.from(sportRelated)) {
+        if (parentSports[slug] || leagueToSport[slug] || slug === 'sports' || slug === 'esports') continue;
+        // Direct: slug contains a parent sport name (e.g., "college-football" → football)
+        for (const parent of Object.keys(parentSports)) {
+          if (parent.length >= 4 && slug.includes(parent)) {
+            leagueToSport[slug] = parent;
+            break;
+          }
+        }
+        if (leagueToSport[slug]) continue;
+        // Indirect: co-occurring tag is already a league → assign same parent
+        const cos = coOcc[slug] || {};
+        let bestParent: string | null = null;
+        let bestCoOcc = 0;
+        for (const [co, coCount] of Object.entries(cos)) {
+          if (leagueToSport[co] && coCount > bestCoOcc) {
+            bestParent = leagueToSport[co];
+            bestCoOcc = coCount;
+          }
+        }
+        if (bestParent) leagueToSport[slug] = bestParent;
+      }
+
+      // Step 4: Orphan sport-related tags with ≥20 events → promote to parent sport
+      // Only if they don't co-occur with ANY existing parent or league
       for (const slug of Array.from(sportRelated)) {
         if (parentSports[slug] || leagueToSport[slug] || slug === 'sports' || slug === 'esports') continue;
         const cos = coOcc[slug] || {};
         const count = tagCount[slug];
         let hasAnyParent = false;
         for (const [co, coCount] of Object.entries(cos)) {
-          if (parentSports[co] && coCount / count >= 0.05) { hasAnyParent = true; break; }
+          if ((parentSports[co] || leagueToSport[co]) && coCount / count >= 0.05) {
+            hasAnyParent = true; break;
+          }
         }
-        if (hasAnyParent) continue; // will be caught as league
-        if (tagCount[slug] >= 15) {
+        if (hasAnyParent) continue;
+        if (tagCount[slug] >= 20) {
           parentSports[slug] = tagLabel[slug] || slug;
         }
       }

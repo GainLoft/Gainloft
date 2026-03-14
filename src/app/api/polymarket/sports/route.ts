@@ -544,6 +544,18 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
     };
   }
 
+  // Merge aliases: combine duplicate parent sports into canonical forms
+  const ALIASES: Record<string, string> = { 'ping-pong': 'table-tennis' };
+  for (const [alias, canonical] of Object.entries(ALIASES)) {
+    if (parentSports[alias] && parentSports[canonical]) {
+      delete parentSports[alias];
+      // Redirect leagues of alias to canonical
+      for (const [league, parent] of Object.entries(leagueToSport)) {
+        if (parent === alias) leagueToSport[league] = canonical;
+      }
+    }
+  }
+
   // Build sport map from auto-detected taxonomy
   const sportMap: Record<string, { label: string; count: number; volume: number; leagues: { slug: string; label: string; count: number; volume: number }[] }> = {};
 
@@ -570,6 +582,31 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
       sportMap[parentSport].count += tc.count;
       sportMap[parentSport].volume += tc.volume;
     }
+  }
+
+  // Deduplicate leagues: merge abbreviations into full names (e.g., cs2 → counter-strike-2)
+  const LEAGUE_ALIASES: Record<string, string> = {
+    cs2: 'counter-strike-2', lol: 'league-of-legends',
+    'formula-1': 'f1', 'pga-tour': 'pga',
+  };
+  for (const sport of Object.values(sportMap)) {
+    const bySlug = new Map<string, typeof sport.leagues[0]>();
+    for (const lg of sport.leagues) {
+      const canonical = LEAGUE_ALIASES[lg.slug] || lg.slug;
+      const existing = bySlug.get(canonical);
+      if (existing) {
+        // Keep higher-volume entry, sum counts
+        if (lg.volume > existing.volume) {
+          lg.count += existing.count;
+          bySlug.set(canonical, { ...lg, slug: canonical });
+        } else {
+          existing.count += lg.count;
+        }
+      } else {
+        bySlug.set(canonical, { ...lg, slug: canonical });
+      }
+    }
+    sport.leagues = Array.from(bySlug.values());
   }
 
   // Sort leagues within each sport by volume desc
