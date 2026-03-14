@@ -307,28 +307,13 @@ function MatchCard({
     /O\/U\s|totals|over.?under/i.test(mt.label) && mt !== ml && isActive(mt)
   );
 
-  const gameLabel = m.league;
+  const leagueName = m.league;
   const statusLabel = m.status === 'live'
     ? (m.status_detail || '')
     : m.status === 'final' ? 'FINAL'
     : m.status_detail || new Date(m.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-
-  // Find the best league/sport tag from event tags for icon + full name
-  const leagueTag = (() => {
-    const tags = (event.tags || []).map(t => ({ slug: t.slug.toLowerCase(), label: t.label }));
-    // Prefer specific league slugs that have icons
-    for (const t of tags) {
-      if (LEAGUE_LOGO[t.slug]) return t;
-    }
-    // Fall back to parent sport mapping
-    for (const t of tags) {
-      if (SPORT_PARENT[t.slug]) return t;
-    }
-    return tags[0] || { slug: '', label: '' };
-  })();
-  const leagueSlug = leagueTag.slug;
-  // Use tag label as full name, fall back to m.league
-  const leagueFullName = LABEL_OVERRIDES[leagueSlug] || leagueTag.label || gameLabel;
+  // Use Polymarket's event image as the league/tournament logo
+  const leagueLogo = m.event_image || event.image_url || '';
 
   const gameViewCount = m.game_views ?? m.market_types.length;
 
@@ -357,8 +342,17 @@ function MatchCard({
             background: 'var(--bg-surface)', borderRadius: 6, padding: '3px 10px',
             whiteSpace: 'nowrap',
           }}>
-            <LeagueIcon slug={leagueSlug} size={16} />
-            {statusLabel ? `${leagueFullName} \u00b7 ${statusLabel}` : leagueFullName}
+            {leagueLogo && (
+              <img
+                src={leagueLogo}
+                alt=""
+                width={18}
+                height={18}
+                style={{ width: 18, height: 18, borderRadius: 3, objectFit: 'cover', flexShrink: 0 }}
+                loading="eager"
+              />
+            )}
+            {statusLabel ? `${leagueName} \u00b7 ${statusLabel}` : leagueName}
           </span>
           <span style={{
             fontSize: 14, color: 'var(--text-muted)', fontWeight: 500,
