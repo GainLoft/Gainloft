@@ -258,14 +258,17 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     const merged = mergeMatchEvents(rawEvents);
 
     // Polymarket groups live events by sport/league, then sorts groups by max volume.
-    // Extract league key for each event (series slug or first specific tag)
+    // Extract league key: most specific tag (not generic, not broad sport category)
     const GENERIC_TAGS = new Set(['sports', 'esports', 'games']);
+    const SPORT_PARENT_TAGS = new Set(['soccer', 'cricket', 'rugby', 'tennis', 'hockey', 'baseball', 'basketball', 'american-football', 'mma', 'boxing', 'golf', 'formula-1', 'nascar', 'table-tennis']);
     const getLeagueKey = (ev: EventGroup): string => {
-      // Use the most specific tag as league grouping key
-      for (const t of (ev.tags || [])) {
-        if (!GENERIC_TAGS.has(t.slug)) return t.slug;
-      }
-      return ev.category || 'other';
+      const tags = (ev.tags || []).map(t => t.slug);
+      // Prefer league-level tag (not generic, not broad sport)
+      const league = tags.find(s => !GENERIC_TAGS.has(s) && !SPORT_PARENT_TAGS.has(s));
+      if (league) return league;
+      // Fall back to sport-level tag (e.g., for esports: counter-strike-2, dota-2)
+      const sport = tags.find(s => !GENERIC_TAGS.has(s));
+      return sport || ev.category || 'other';
     };
 
     // Split into live and upcoming
