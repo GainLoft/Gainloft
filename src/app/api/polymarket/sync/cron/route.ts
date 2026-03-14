@@ -166,10 +166,24 @@ export async function GET(req: NextRequest) {
             }
           }
           if (leagueToSport[slug]) continue;
-          // Indirect: co-occurring tag is already a league → assign same parent
-          // Require ≥10% co-occurrence to avoid noise
           const cos = coOcc[slug] || {};
           const count = tagCount[slug];
+          // Co-occurring tag's slug contains a parent name (e.g., cfb co-occurs with "college-football" → football)
+          for (const [co, coCount] of Object.entries(cos)) {
+            if (META.has(co) || co === slug || co === 'sports') continue;
+            if (coCount / count < 0.1) continue;
+            for (const parent of Object.keys(parentSports)) {
+              if (parent.length >= 4 && co.includes(parent)) {
+                leagueToSport[slug] = parent;
+                changed = true;
+                break;
+              }
+            }
+            if (leagueToSport[slug]) break;
+          }
+          if (leagueToSport[slug]) continue;
+          // Indirect: co-occurring tag is already a league → assign same parent
+          // Require ≥10% co-occurrence to avoid noise
           let bestParent: string | null = null;
           let bestCoOcc = 0;
           for (const [co, coCount] of Object.entries(cos)) {
