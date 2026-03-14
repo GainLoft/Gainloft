@@ -630,7 +630,7 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
   // Sort parent sports by volume desc (matches Polymarket's sidebar order)
   const result: TaxonomyItem[] = Object.entries(sportMap)
     .filter(([, v]) => v.count > 0)
-    .map(([slug, v]) => ({ slug, label: v.label, count: v.count, leagues: v.leagues }))
+    .map(([slug, v]) => ({ slug, label: v.label, count: v.count, volume: v.volume, leagues: v.leagues.map(l => ({ ...l, volume: l.volume })) }))
     .sort((a, b) => {
       const aVol = sportMap[a.slug].volume;
       const bVol = sportMap[b.slug].volume;

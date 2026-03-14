@@ -9,8 +9,8 @@ import { useLivePrices, extractTokenIds } from '@/hooks/useLivePrices';
 
 /* ── Types ── */
 
-interface TaxonomyLeague { slug: string; label: string; count: number }
-interface TaxonomyItem { slug: string; label: string; count: number; leagues: TaxonomyLeague[] }
+interface TaxonomyLeague { slug: string; label: string; count: number; volume?: number }
+interface TaxonomyItem { slug: string; label: string; count: number; volume?: number; leagues: TaxonomyLeague[] }
 
 interface PageResponse {
   events: EventGroup[];
@@ -854,13 +854,13 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
 
   /* ── Top leagues for sidebar quick-access (like Polymarket: NBA, NCAAB, UCL, NHL at top) ── */
   const sidebarSubLeagues = useMemo(() => {
-    const allLeagues: { slug: string; label: string; count: number; sport: string }[] = [];
+    const allLeagues: { slug: string; label: string; count: number; volume: number; sport: string }[] = [];
     for (const sport of taxonomy) {
       for (const league of sport.leagues) {
-        allLeagues.push({ slug: league.slug, label: league.label, count: league.count, sport: sport.slug });
+        allLeagues.push({ slug: league.slug, label: league.label, count: league.count, volume: league.volume || 0, sport: sport.slug });
       }
     }
-    allLeagues.sort((a, b) => b.count - a.count);
+    allLeagues.sort((a, b) => b.volume - a.volume);
     return allLeagues.slice(0, 6);
   }, [taxonomy]);
 
