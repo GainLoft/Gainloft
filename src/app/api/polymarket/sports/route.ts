@@ -316,8 +316,9 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
 
   // Taxonomy was started in parallel at the top — await it now
   const taxonomy = await taxonomyPromise;
+  const topLeagueOrder = taxonomy ? await getTopLeagueOrder() : null;
 
-  const responseData = { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}) };
+  const responseData = { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}), ...(topLeagueOrder ? { topLeagueOrder } : {}) };
 
   // Cache slimmed response for edge endpoint (unfiltered first page only)
   if (!sportFilter && !leagueFilter && offset === 0) {
@@ -453,14 +454,16 @@ async function handleFutures(tagWhere: string, tagParams: any[], paramIdx: numbe
   }
 
   let taxonomy: TaxonomyItem[] | undefined;
+  let topLeagueOrder: string[] | null = null;
   if (offset === 0) {
     taxonomy = await buildTaxonomyFromDB();
+    topLeagueOrder = await getTopLeagueOrder();
   }
 
   const hasMore = offset + events.length < total;
 
   return NextResponse.json(
-    { events, hasMore, total, ...(taxonomy ? { taxonomy } : {}) },
+    { events, hasMore, total, ...(taxonomy ? { taxonomy } : {}), ...(topLeagueOrder ? { topLeagueOrder } : {}) },
     { headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=20' } }
   );
 }
@@ -621,22 +624,60 @@ async function buildTaxonomyFromDB(): Promise<TaxonomyItem[]> {
     sport.leagues.sort((a, b) => b.volume - a.volume);
   }
 
-  // Sort parent sports by Polymarket's curated order, then volume for unlisted
-  const SPORT_ORDER: Record<string, number> = {
+  // Sort parent sports by Polymarket's scraped order (auto-updated by cron)
+  // Fallback to hardcoded order if scrape hasn't run yet
+  let sportOrderMap: Record<string, number> = {
     basketball: 1, soccer: 2, esports: 3, tennis: 4, cricket: 5,
     hockey: 6, rugby: 7, 'table-tennis': 8, ufc: 9, football: 10,
     golf: 11, formula1: 12, chess: 13, boxing: 14, pickleball: 15,
     lacrosse: 16, baseball: 17,
   };
+
+  // Name → slug mapping for scraped sport names
+  const NAME_TO_SLUG: Record<string, string> = {
+    'basketball': 'basketball', 'soccer': 'soccer', 'esports': 'esports',
+    'tennis': 'tennis', 'cricket': 'cricket', 'hockey': 'hockey',
+    'rugby': 'rugby', 'table tennis': 'table-tennis', 'ufc': 'ufc',
+    'football': 'football', 'golf': 'golf', 'formula 1': 'formula1',
+    'chess': 'chess', 'boxing': 'boxing', 'pickleball': 'pickleball',
+    'lacrosse': 'lacrosse', 'baseball': 'baseball',
+  };
+
+  try {
+    const { rows: orderRows } = await pool.query(
+      `SELECT data FROM api_cache WHERE key = 'polymarket_sport_order' AND updated_at > NOW() - INTERVAL '1 day'`
+    );
+    if (orderRows[0]?.data?.sportOrder?.length >= 3) {
+      const scraped: Record<string, number> = {};
+      const sportNames: string[] = orderRows[0].data.sportOrder;
+      sportNames.forEach((name: string, i: number) => {
+        const slug = NAME_TO_SLUG[name.toLowerCase()] || name.toLowerCase().replace(/\s+/g, '-');
+        scraped[slug] = i + 1;
+      });
+      sportOrderMap = scraped;
+    }
+  } catch { /* use fallback */ }
+
   return Object.entries(sportMap)
     .filter(([, v]) => v.count > 0)
     .map(([slug, v]) => ({ slug, label: v.label, count: v.count, volume: v.volume, leagues: v.leagues }))
     .sort((a, b) => {
-      const oa = SPORT_ORDER[a.slug] ?? 100;
-      const ob = SPORT_ORDER[b.slug] ?? 100;
+      const oa = sportOrderMap[a.slug] ?? 100;
+      const ob = sportOrderMap[b.slug] ?? 100;
       if (oa !== ob) return oa - ob;
-      return b.volume - a.volume; // fallback for unlisted sports
+      return b.volume - a.volume;
     });
+}
+
+/** Read top league order scraped from Polymarket (cached by cron) */
+async function getTopLeagueOrder(): Promise<string[] | null> {
+  try {
+    const { rows } = await pool.query(
+      `SELECT data FROM api_cache WHERE key = 'polymarket_sport_order' AND updated_at > NOW() - INTERVAL '1 day'`
+    );
+    if (rows[0]?.data?.topLeagues?.length >= 2) return rows[0].data.topLeagues;
+  } catch { /* skip */ }
+  return null;
 }
 
 // ═══════════════════════════════════════════════════

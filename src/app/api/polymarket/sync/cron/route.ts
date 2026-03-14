@@ -268,7 +268,69 @@ export async function GET(req: NextRequest) {
       console.error('Auto taxonomy error:', taxErr);
     }
 
-    // 2. Fix stale categories
+    // 2. Scrape Polymarket's sports page to extract sidebar ordering
+    try {
+      const pmRes = await fetch('https://polymarket.com/sports', {
+        cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' },
+      });
+      if (pmRes.ok) {
+        const html = await pmRes.text();
+
+        // Extract top leagues from sidebar (appear before "All Sports")
+        // Pattern: league slugs in href links like /sports/nba/games or sidebar items
+        const topLeagueSlugs: string[] = [];
+        const topLeagueRe = /href="\/sports\/([a-z0-9-]+)\/games"/g;
+        let m;
+        const seenTop = new Set<string>();
+        // First 4 unique league links before sport categories = top leagues
+        while ((m = topLeagueRe.exec(html)) !== null && topLeagueSlugs.length < 10) {
+          const slug = m[1];
+          if (!seenTop.has(slug)) { seenTop.add(slug); topLeagueSlugs.push(slug); }
+        }
+
+        // Extract sport category order from sidebar
+        // Pattern: sport names in the sidebar section, or /sports/[sport] links
+        const sportCategoryRe = /href="\/sports\/([a-z0-9-]+)(?:\/[a-z0-9-]+)?\/games"/g;
+        const allSlugs: string[] = [];
+        const seenAll = new Set<string>();
+        while ((m = sportCategoryRe.exec(html)) !== null) {
+          const slug = m[1];
+          if (!seenAll.has(slug)) { seenAll.add(slug); allSlugs.push(slug); }
+        }
+
+        // Also extract sport category names from text patterns
+        const sportTextRe = />(Basketball|Soccer|Esports|Tennis|Cricket|Hockey|Rugby|Table Tennis|UFC|Football|Golf|Formula 1|Chess|Boxing|Pickleball|Lacrosse|Baseball)<\//gi;
+        const sportOrder: string[] = [];
+        const seenSports = new Set<string>();
+        while ((m = sportTextRe.exec(html)) !== null) {
+          const name = m[1];
+          if (!seenSports.has(name.toLowerCase())) {
+            seenSports.add(name.toLowerCase());
+            sportOrder.push(name);
+          }
+        }
+
+        // Polymarket slug → our slug mapping
+        const PM_TO_OUR: Record<string, string> = {
+          cbb: 'ncaa-basketball', f1: 'formula1',
+        };
+
+        if (topLeagueSlugs.length >= 2 || sportOrder.length >= 3) {
+          await pool.query(
+            `INSERT INTO api_cache (key, data, updated_at) VALUES ('polymarket_sport_order', $1::jsonb, NOW())
+             ON CONFLICT (key) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
+            [JSON.stringify({
+              topLeagues: topLeagueSlugs.map(s => PM_TO_OUR[s] || s),
+              sportOrder: sportOrder,
+              allSlugs: allSlugs.map(s => PM_TO_OUR[s] || s),
+              scrapedAt: new Date().toISOString(),
+            })]
+          );
+        }
+      }
+    } catch { /* skip — fallback to hardcoded order */ }
+
+    // 3. Fix stale categories
     try {
       await pool.query(`UPDATE event_groups SET category = 'Sports' WHERE category != 'Sports' AND (tags @> '[{"slug":"sports"}]'::jsonb OR tags @> '[{"slug":"esports"}]'::jsonb)`);
       await pool.query(`UPDATE markets SET category = 'Sports' WHERE category != 'Sports' AND (tags @> '[{"slug":"sports"}]'::jsonb OR tags @> '[{"slug":"esports"}]'::jsonb)`);

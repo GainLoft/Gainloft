@@ -17,6 +17,7 @@ interface PageResponse {
   hasMore: boolean;
   total: number;
   taxonomy?: TaxonomyItem[];
+  topLeagueOrder?: string[];
 }
 
 /* ── Helpers ── */
@@ -627,6 +628,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   /* ── Infinite scroll state ── */
   const [events, setEvents] = useState<EventGroup[]>(initialEvents);
   const [taxonomy, setTaxonomy] = useState<TaxonomyItem[]>(initialTaxonomy);
+  const [topLeagueOrder, setTopLeagueOrder] = useState<string[] | null>(null);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [total, setTotal] = useState(initialTotal);
   const [isLoading, setIsLoading] = useState(initialEvents.length === 0);
@@ -673,7 +675,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         setEvents(prev => [...prev, ...data.events]);
       } else {
         setEvents(data.events);
-        if (data.taxonomy) setTaxonomy(data.taxonomy);
+        if (data.taxonomy) { setTaxonomy(data.taxonomy); if (data.topLeagueOrder) setTopLeagueOrder(data.topLeagueOrder); }
       }
       setHasMore(data.hasMore);
       setTotal(data.total);
@@ -691,7 +693,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   useEffect(() => {
     fetch(`/api/polymarket/sports?tab=${viewTab}&offset=0&limit=1`)
       .then(r => r.json())
-      .then(data => { if (data.taxonomy) setTaxonomy(data.taxonomy); })
+      .then(data => { if (data.taxonomy) { setTaxonomy(data.taxonomy); if (data.topLeagueOrder) setTopLeagueOrder(data.topLeagueOrder); } })
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -734,7 +736,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         fetch(buildUrl(0), { signal: controller.signal })
           .then(r => r.json())
           .then((data: PageResponse) => {
-            if (data.taxonomy) setTaxonomy(data.taxonomy);
+            if (data.taxonomy) { setTaxonomy(data.taxonomy); if (data.topLeagueOrder) setTopLeagueOrder(data.topLeagueOrder); }
             setEvents(prev => {
               const newMap = new Map(data.events.map(e => [e.id, e]));
               return prev.map(e => newMap.get(e.id) || e);
@@ -852,9 +854,10 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     return a.localeCompare(b);
   });
 
-  /* ── Top leagues for sidebar quick-access (matches Polymarket: NBA, NCAAB, UCL, NHL) ── */
+  /* ── Top leagues for sidebar quick-access (auto-scraped from Polymarket, fallback to curated) ── */
   const sidebarSubLeagues = useMemo(() => {
-    const TOP_LEAGUE_ORDER = ['nba', 'ncaa-basketball', 'ucl', 'nhl'];
+    const FALLBACK_ORDER = ['nba', 'ncaa-basketball', 'ucl', 'nhl'];
+    const order = topLeagueOrder && topLeagueOrder.length >= 2 ? topLeagueOrder : FALLBACK_ORDER;
     const leagueMap = new Map<string, { slug: string; label: string; count: number; volume: number; sport: string }>();
     for (const sport of taxonomy) {
       for (const league of sport.leagues) {
@@ -862,12 +865,12 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
       }
     }
     const result: { slug: string; label: string; count: number; volume: number; sport: string }[] = [];
-    for (const slug of TOP_LEAGUE_ORDER) {
+    for (const slug of order) {
       const league = leagueMap.get(slug);
       if (league && league.count > 0) result.push(league);
     }
     return result;
-  }, [taxonomy]);
+  }, [taxonomy, topLeagueOrder]);
 
   const sel = selectedEvent && displayEvents.find(e => e.id === selectedEvent.id)
     ? selectedEvent
