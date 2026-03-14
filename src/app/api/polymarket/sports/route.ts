@@ -156,13 +156,10 @@ const GAMMA_API = 'https://gamma-api.polymarket.com';
 /** Fetch live sports directly from Polymarket's Gamma API (real-time, same data as polymarket.com/sports) */
 async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
   try {
-    const now = new Date();
-    // Fetch events ending within the next 24 hours (covers live + starting soon)
-    const minEnd = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString(); // 3h ago
     const params = (tag: string) => new URLSearchParams({
       active: 'true', closed: 'false', tag_slug: tag,
-      order: 'endDate', ascending: 'true',
-      end_date_min: minEnd, limit: '100',
+      order: 'volume24hr', ascending: 'false',
+      limit: '50',
     });
 
     const [sportsRes, esportsRes] = await Promise.all([
@@ -181,7 +178,7 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     const sportsEvents: PMEvent[] = sportsRes.ok ? await sportsRes.json() : [];
     const esportsEvents: PMEvent[] = esportsRes.ok ? await esportsRes.json() : [];
 
-    // Deduplicate by ID
+    // Deduplicate by ID, merge both tags
     const seen = new Set<string>();
     const allEvents: PMEvent[] = [];
     for (const ev of [...sportsEvents, ...esportsEvents]) {
@@ -226,15 +223,8 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     }
 
     const merged = mergeMatchEvents(rawEvents);
-    // Sort by endDate ASC — same as Polymarket
-    merged.sort((a, b) => {
-      const aLive = a.match?.status === 'live' ? 0 : 1;
-      const bLive = b.match?.status === 'live' ? 0 : 1;
-      if (aLive !== bLive) return aLive - bLive;
-      const aTime = new Date(a.end_date_iso || '').getTime();
-      const bTime = new Date(b.end_date_iso || '').getTime();
-      return aTime - bTime;
-    });
+    // Sort by volume24hr DESC — same as Polymarket
+    merged.sort((a, b) => (b.volume || 0) - (a.volume || 0));
 
     const events = merged;
     const total = events.length;
