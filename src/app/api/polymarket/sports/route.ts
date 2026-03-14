@@ -256,22 +256,48 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     }
 
     const merged = mergeMatchEvents(rawEvents);
-    // Sort: live first by volume DESC, then upcoming by start time ASC (soonest first)
-    merged.sort((a, b) => {
-      const aLive = a.match?.status === 'live' ? 0 : 1;
-      const bLive = b.match?.status === 'live' ? 0 : 1;
-      if (aLive !== bLive) return aLive - bLive;
-      if (aLive === 0) {
-        // Both live: sort by volume DESC
-        return (b.volume || 0) - (a.volume || 0);
+
+    // Polymarket groups live events by sport/league, then sorts groups by max volume.
+    // Extract league key for each event (series slug or first specific tag)
+    const GENERIC_TAGS = new Set(['sports', 'esports', 'games']);
+    const getLeagueKey = (ev: EventGroup): string => {
+      // Use the most specific tag as league grouping key
+      for (const t of (ev.tags || [])) {
+        if (!GENERIC_TAGS.has(t.slug)) return t.slug;
       }
-      // Both upcoming: sort by startTime ASC (actual match start, not market close)
+      return ev.category || 'other';
+    };
+
+    // Split into live and upcoming
+    const liveEvents = merged.filter(e => e.match?.status === 'live');
+    const upcomingEvents = merged.filter(e => e.match?.status !== 'live');
+
+    // Group live events by league, sort groups by max volume, sort within by volume
+    const leagueGroups = new Map<string, EventGroup[]>();
+    for (const ev of liveEvents) {
+      const key = getLeagueKey(ev);
+      if (!leagueGroups.has(key)) leagueGroups.set(key, []);
+      leagueGroups.get(key)!.push(ev);
+    }
+    // Sort within each group by volume DESC
+    for (const group of leagueGroups.values()) {
+      group.sort((a, b) => (b.volume || 0) - (a.volume || 0));
+    }
+    // Sort groups by their top event's volume DESC
+    const sortedGroups = [...leagueGroups.entries()]
+      .sort(([, a], [, b]) => (b[0].volume || 0) - (a[0].volume || 0));
+    const sortedLive = sortedGroups.flatMap(([, group]) => group);
+
+    // Sort upcoming by startTime ASC (actual match start, not market close)
+    upcomingEvents.sort((a, b) => {
       const aStart = startTimeMap.get(a.id) || a.end_date_iso || '';
       const bStart = startTimeMap.get(b.id) || b.end_date_iso || '';
       return aStart.localeCompare(bStart);
     });
 
-    const events = merged;
+    const sorted = [...sortedLive, ...upcomingEvents];
+
+    const events = sorted;
     const total = events.length;
     const trimmed = events.slice(0, limit);
     const hasMore = trimmed.length < total;
