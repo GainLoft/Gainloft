@@ -91,12 +91,20 @@ const ESPORTS_TAGS = new Set([
 function isMatchSettled(ev: PMEvent): boolean {
   const markets = ev.markets || [];
   const endDate = ev.endDate ? new Date(ev.endDate) : null;
-  const isPast = endDate ? endDate < new Date() : false;
+  const now = new Date();
+  const isPast = endDate ? endDate < now : false;
+  const hoursPast = endDate ? (now.getTime() - endDate.getTime()) / (1000 * 60 * 60) : 0;
+
+  // Hard cutoff: if end_date is >12 hours ago, the match is certainly over
+  if (hoursPast > 12) return true;
 
   // For esports: always check settlement (they can settle mid-match)
   // For traditional sports: only check if end date has passed
   const isEsports = ev.tags?.some(t => ESPORTS_TAGS.has(t.slug));
   if (!isEsports && !isPast) return false;
+
+  // Use a looser threshold for older matches (>3 hours past → 0.88, otherwise 0.95)
+  const threshold = hoursPast > 3 ? 0.88 : 0.95;
 
   // Find Match Winner / Moneyline market
   const mw = markets.find(m =>
@@ -115,14 +123,14 @@ function isMatchSettled(ev: PMEvent): boolean {
       if (t1m && t2m) {
         const p1 = parseFloat(parseField(t1m.outcomePrices)[0] || '0.5');
         const p2 = parseFloat(parseField(t2m.outcomePrices)[0] || '0.5');
-        return (p1 >= 0.95 || p1 <= 0.05) && (p2 >= 0.95 || p2 <= 0.05);
+        return (p1 >= threshold || p1 <= (1 - threshold)) && (p2 >= threshold || p2 <= (1 - threshold));
       }
     }
     // Fallback: if end date is past and ALL sub-markets are settled, treat as done
     if (isPast && markets.length > 0) {
       const allSettled = markets.every(m => {
         const p = parseFloat(parseField(m.outcomePrices)[0] || '0.5');
-        return p >= 0.95 || p <= 0.05;
+        return p >= threshold || p <= (1 - threshold);
       });
       if (allSettled) return true;
     }
@@ -131,7 +139,7 @@ function isMatchSettled(ev: PMEvent): boolean {
   const prices = parseField(mw.outcomePrices);
   if (prices.length < 2) return false;
   const p0 = parseFloat(prices[0] || '0.5');
-  return p0 >= 0.95 || p0 <= 0.05;
+  return p0 >= threshold || p0 <= (1 - threshold);
 }
 
 /** Check if a market is a placeholder (no price data) */
@@ -192,6 +200,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
          AND ${egTagWhere}
          AND eg.title ~* 'vs\\.?'
          AND EXISTS (SELECT 1 FROM markets m WHERE m.event_group_id = eg.id AND m.closed = false)
+         AND (eg.end_date_iso IS NULL OR eg.end_date_iso > NOW() - INTERVAL '12 hours')
        ORDER BY eg.end_date_iso ASC NULLS LAST
        LIMIT 300`,
       tagParams
@@ -206,6 +215,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
          AND ${mTagWhere}
          AND m.question ~* 'vs\\.?'
          AND m.closed = false
+         AND (m.end_date_iso IS NULL OR m.end_date_iso > NOW() - INTERVAL '12 hours')
        ORDER BY m.end_date_iso ASC NULLS LAST
        LIMIT 100`,
       tagParams
@@ -308,7 +318,18 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
   }
 
   // 7. Merge event_groups for the same physical match
-  const events = mergeMatchEvents(rawEvents);
+  const merged = mergeMatchEvents(rawEvents);
+
+  // 8. Sort: live matches first (by start_time ASC), then upcoming (by start_time ASC)
+  merged.sort((a, b) => {
+    const aLive = a.match?.status === 'live' ? 0 : 1;
+    const bLive = b.match?.status === 'live' ? 0 : 1;
+    if (aLive !== bLive) return aLive - bLive;
+    const aTime = new Date(a.match?.start_time || a.end_date_iso || '').getTime();
+    const bTime = new Date(b.match?.start_time || b.end_date_iso || '').getTime();
+    return aTime - bTime;
+  });
+  const events = merged;
 
   const total = events.length;
   const trimmed = events.slice(offset, offset + limit);
@@ -824,7 +845,17 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
       });
     }
 
-    const events = mergeMatchEvents(rawEvents);
+    const merged = mergeMatchEvents(rawEvents);
+    // Sort: live matches first (by start_time ASC), then upcoming (by start_time ASC)
+    merged.sort((a, b) => {
+      const aLive = a.match?.status === 'live' ? 0 : 1;
+      const bLive = b.match?.status === 'live' ? 0 : 1;
+      if (aLive !== bLive) return aLive - bLive;
+      const aTime = new Date(a.match?.start_time || a.end_date_iso || '').getTime();
+      const bTime = new Date(b.match?.start_time || b.end_date_iso || '').getTime();
+      return aTime - bTime;
+    });
+    const events = merged;
     const trimmed = events.slice(0, limit);
     const taxonomy = await buildTaxonomyFromDB();
     const hasMore = trimmed.length < events.length;
