@@ -283,11 +283,12 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
       leagueGroups.get(key)!.push(ev);
     }
     // Sort within each group by volume DESC
-    for (const group of leagueGroups.values()) {
+    const groupEntries = Array.from(leagueGroups.entries());
+    for (const [, group] of groupEntries) {
       group.sort((a, b) => (b.volume || 0) - (a.volume || 0));
     }
     // Sort groups by their top event's volume DESC
-    const sortedGroups = [...leagueGroups.entries()]
+    const sortedGroups = groupEntries
       .sort(([, a], [, b]) => (b[0].volume || 0) - (a[0].volume || 0));
     const sortedLive = sortedGroups.flatMap(([, group]) => group);
 
