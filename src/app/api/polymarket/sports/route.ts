@@ -209,12 +209,14 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     for (const ev of allEvents) {
       if (ev.closed) continue;
       if (!/vs\.?/i.test(ev.title)) continue;
-      if (isMatchSettled(ev)) continue;
+      const isApiLive = liveIds.has(ev.id);
+      // Trust Polymarket's live API — don't filter out API-confirmed live events
+      if (!isApiLive && isMatchSettled(ev)) continue;
       const matchInfo = buildMatchInfo(ev);
-      if (!matchInfo || matchInfo.status === 'final') continue;
-
+      if (!matchInfo) continue;
+      if (!isApiLive && matchInfo.status === 'final') continue;
       // Force live status for events confirmed live by the API
-      if (liveIds.has(ev.id) && matchInfo.status !== 'live') {
+      if (isApiLive) {
         matchInfo.status = 'live';
       }
 
