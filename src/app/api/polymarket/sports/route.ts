@@ -287,9 +287,13 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     for (const [, group] of groupEntries) {
       group.sort((a, b) => (b.volume || 0) - (a.volume || 0));
     }
-    // Sort groups by their top event's volume DESC
+    // Sort groups by total group volume DESC (like Polymarket)
     const sortedGroups = groupEntries
-      .sort(([, a], [, b]) => (b[0].volume || 0) - (a[0].volume || 0));
+      .sort(([, a], [, b]) => {
+        const aTotal = a.reduce((s, e) => s + (e.volume || 0), 0);
+        const bTotal = b.reduce((s, e) => s + (e.volume || 0), 0);
+        return bTotal - aTotal;
+      });
     const sortedLive = sortedGroups.flatMap(([, group]) => group);
 
     // Sort upcoming by startTime ASC (actual match start, not market close)

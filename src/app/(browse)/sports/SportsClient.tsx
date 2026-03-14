@@ -885,9 +885,9 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
 
   const sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
     if (isFiltered) return a.localeCompare(b);
-    // Sort league groups by their top event's volume DESC (like Polymarket)
-    const aVol = grouped[a]?.[0]?.volume || 0;
-    const bVol = grouped[b]?.[0]?.volume || 0;
+    // Sort league groups by total group volume DESC (like Polymarket)
+    const aVol = (grouped[a] || []).reduce((sum, e) => sum + (e.volume || 0), 0);
+    const bVol = (grouped[b] || []).reduce((sum, e) => sum + (e.volume || 0), 0);
     return bVol - aVol;
   });
 
