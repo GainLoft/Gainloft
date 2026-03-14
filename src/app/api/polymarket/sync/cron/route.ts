@@ -118,11 +118,21 @@ export async function GET(req: NextRequest) {
           const cos = coOcc[slug] || {};
           const count = tagCount[slug];
           // Skip if this tag co-occurs with an existing SPORT_NAMES parent
+          // OR if a co-occurring tag's slug contains a SPORT_NAMES parent name
           let hasNamedParent = false;
           for (const [co, coCount] of Object.entries(cos)) {
             if (parentSports[co] && SPORT_NAMES.has(co) && coCount / count >= 0.05) {
               hasNamedParent = true; break;
             }
+            // e.g., cfb co-occurs with "college-football" → has football parent
+            if (coCount / count >= 0.1) {
+              for (const parent of Object.keys(parentSports)) {
+                if (SPORT_NAMES.has(parent) && parent.length >= 4 && co.includes(parent)) {
+                  hasNamedParent = true; break;
+                }
+              }
+            }
+            if (hasNamedParent) break;
           }
           if (hasNamedParent) continue;
           if (cos['sports'] && cos['sports'] / count >= 0.15) {
