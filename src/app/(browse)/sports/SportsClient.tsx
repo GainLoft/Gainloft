@@ -51,8 +51,8 @@ const LABEL_OVERRIDES: Record<string, string> = {
   'honor-of-kings': 'Honor of Kings',
   'dota-2': 'Dota 2',
   'valorant': 'Valorant',
-  'ncaa-basketball': 'NCAA Basketball',
-  'ncaa-cbb': 'NCAA Basketball',
+  'ncaa-basketball': 'NCAAB',
+  'ncaa-cbb': 'NCAAB',
   'table-tennis': 'Table Tennis',
   'ping-pong': 'Table Tennis',
   'la-liga': 'La Liga',
@@ -852,16 +852,21 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     return a.localeCompare(b);
   });
 
-  /* ── Top leagues for sidebar quick-access (like Polymarket: NBA, NCAAB, UCL, NHL at top) ── */
+  /* ── Top leagues for sidebar quick-access (matches Polymarket: NBA, NCAAB, UCL, NHL) ── */
   const sidebarSubLeagues = useMemo(() => {
-    const allLeagues: { slug: string; label: string; count: number; volume: number; sport: string }[] = [];
+    const TOP_LEAGUE_ORDER = ['nba', 'ncaa-basketball', 'ucl', 'nhl'];
+    const leagueMap = new Map<string, { slug: string; label: string; count: number; volume: number; sport: string }>();
     for (const sport of taxonomy) {
       for (const league of sport.leagues) {
-        allLeagues.push({ slug: league.slug, label: league.label, count: league.count, volume: league.volume || 0, sport: sport.slug });
+        leagueMap.set(league.slug, { slug: league.slug, label: league.label, count: league.count, volume: league.volume || 0, sport: sport.slug });
       }
     }
-    allLeagues.sort((a, b) => b.volume - a.volume);
-    return allLeagues.slice(0, 6);
+    const result: { slug: string; label: string; count: number; volume: number; sport: string }[] = [];
+    for (const slug of TOP_LEAGUE_ORDER) {
+      const league = leagueMap.get(slug);
+      if (league && league.count > 0) result.push(league);
+    }
+    return result;
   }, [taxonomy]);
 
   const sel = selectedEvent && displayEvents.find(e => e.id === selectedEvent.id)
