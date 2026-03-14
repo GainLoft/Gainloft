@@ -321,14 +321,14 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
   const merged = mergeMatchEvents(rawEvents);
 
   // 8. Sort: live first by volume DESC, then upcoming by start_time ASC
+  // Sort: live first by start_time ASC (soonest/most recent), then upcoming by start_time ASC
   merged.sort((a, b) => {
     const aLive = a.match?.status === 'live' ? 0 : 1;
     const bLive = b.match?.status === 'live' ? 0 : 1;
     if (aLive !== bLive) return aLive - bLive;
-    if (aLive === 0) return (b.volume || 0) - (a.volume || 0); // live: volume DESC
     const aTime = new Date(a.match?.start_time || a.end_date_iso || '').getTime();
     const bTime = new Date(b.match?.start_time || b.end_date_iso || '').getTime();
-    return aTime - bTime; // upcoming: start_time ASC
+    return aTime - bTime;
   });
   const events = merged;
 
@@ -859,14 +859,14 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
 
     const merged = mergeMatchEvents(rawEvents);
     // Sort: live first by volume DESC, then upcoming by start_time ASC
+    // Sort: live first by start_time ASC (soonest/most recent), then upcoming by start_time ASC
     merged.sort((a, b) => {
       const aLive = a.match?.status === 'live' ? 0 : 1;
       const bLive = b.match?.status === 'live' ? 0 : 1;
       if (aLive !== bLive) return aLive - bLive;
-      if (aLive === 0) return (b.volume || 0) - (a.volume || 0); // live: volume DESC
       const aTime = new Date(a.match?.start_time || a.end_date_iso || '').getTime();
       const bTime = new Date(b.match?.start_time || b.end_date_iso || '').getTime();
-      return aTime - bTime; // upcoming: start_time ASC
+      return aTime - bTime;
     });
     const events = merged;
     const trimmed = events.slice(0, limit);
