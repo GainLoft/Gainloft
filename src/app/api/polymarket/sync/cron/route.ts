@@ -107,8 +107,7 @@ export async function GET(req: NextRequest) {
           AND closed = false
       `);
 
-      const META = new Set(['all','featured','hide-from-new','speculation','pop-culture','celebrities','politics','trump','geopolitics','business','economy','parlays','music','streaming','games','internet-culture','crypto','cryptocurrency','fight','boxingmma','combats','netflix','twitter','x','solana','sol','memecoins','ukraine','russia','peace','putin','zelenskyy','ukraine-peace-deal','china','olympics','skiing','todays-sports']);
-      const ROOT = new Set(['sports', 'esports']);
+      const META = new Set(['all','featured','hide-from-new','speculation','pop-culture','celebrities','politics','trump','geopolitics','business','economy','parlays','music','streaming','games','internet-culture','crypto','cryptocurrency','fight','boxingmma','combats','netflix','twitter','x','solana','sol','memecoins','ukraine','russia','peace','putin','zelenskyy','ukraine-peace-deal','china','olympics','skiing','todays-sports','streamer','bush','mss']);
 
       const tagCount: Record<string, number> = {};
       const tagLabel: Record<string, string> = {};
@@ -133,34 +132,68 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Find most specific parent for each tag (co-occurs on ≥20% of events, has more total events)
-      const parentOf: Record<string, string> = {};
+      // Step 1: Identify sport-related tags (co-occur with 'sports' or 'esports' on ≥10%)
+      const sportRelated = new Set<string>();
       for (const slug of Object.keys(tagCount)) {
-        if (ROOT.has(slug) || META.has(slug)) continue;
-        const count = tagCount[slug];
+        if (slug === 'sports' || META.has(slug)) continue;
+        if (tagCount[slug] < 3) continue; // skip noise tags
         const cos = coOcc[slug] || {};
-        let best: string | null = null;
-        let bestN = Infinity;
-        for (const [co, coCount] of Object.entries(cos)) {
-          if (META.has(co) || co === slug) continue;
-          const coN = tagCount[co] || 0;
-          if (coN <= count) continue;
-          if (coCount / count < 0.2) continue;
-          if (coN < bestN) { best = co; bestN = coN; }
+        const count = tagCount[slug];
+        // Sport-related if co-occurs with root 'sports' or 'esports'
+        for (const root of ['sports', 'esports']) {
+          if (slug === root) { sportRelated.add(slug); break; }
+          if (cos[root] && cos[root] / count >= 0.1) { sportRelated.add(slug); break; }
         }
-        if (best) parentOf[slug] = best;
       }
 
-      // Level 1: parent sports = direct children of root tags
+      // Step 2: Compute diversity (unique sport-related co-occurring tags)
+      // Parent sports (basketball, football, esports) have HIGH diversity — they co-occur with many leagues
+      // Leagues (nba, nfl, cs2) have LOW diversity — they mostly co-occur with one parent sport
+      const diversity: Record<string, number> = {};
+      for (const slug of Array.from(sportRelated)) {
+        const cos = coOcc[slug] || {};
+        let div = 0;
+        for (const co of Object.keys(cos)) {
+          if ((sportRelated.has(co) || co === 'sports') && co !== slug) div++;
+        }
+        diversity[slug] = div;
+      }
+
+      // Step 3: Find parent for each tag using DIVERSITY (not event count)
+      // Parent = co-occurring tag with higher diversity, most specific (lowest diversity among candidates)
+      const parentOf: Record<string, string> = {};
+      for (const slug of Array.from(sportRelated)) {
+        const count = tagCount[slug];
+        const cos = coOcc[slug] || {};
+        const myDiv = diversity[slug] || 0;
+
+        let bestParent: string | null = null;
+        let bestDiv = Infinity;
+
+        for (const [co, coCount] of Object.entries(cos)) {
+          if (co === slug || META.has(co)) continue;
+          if (!sportRelated.has(co) && co !== 'sports') continue;
+          if (coCount / count < 0.15) continue; // must co-occur on ≥15% of events
+
+          const coDiv = (co === 'sports') ? 9999 : (diversity[co] || 0);
+          if (coDiv <= myDiv) continue; // parent must have higher diversity
+
+          if (coDiv < bestDiv) { bestParent = co; bestDiv = coDiv; }
+        }
+
+        if (bestParent) parentOf[slug] = bestParent;
+      }
+
+      // Level 1: parent sports = direct children of 'sports' root
       const parentSports: Record<string, string> = {};
       for (const [slug, par] of Object.entries(parentOf)) {
-        if (ROOT.has(par)) parentSports[slug] = tagLabel[slug] || slug;
+        if (par === 'sports') parentSports[slug] = tagLabel[slug] || slug;
       }
 
       // Level 2: leagues = children/grandchildren of parent sports
       const leagueToSport: Record<string, string> = {};
       for (const [slug, par] of Object.entries(parentOf)) {
-        if (parentSports[slug] || ROOT.has(slug)) continue;
+        if (parentSports[slug] || par === 'sports') continue;
         if (parentSports[par]) {
           leagueToSport[slug] = par;
         } else {
