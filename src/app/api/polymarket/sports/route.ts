@@ -199,12 +199,19 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
       liveOffsets.map(o => fetchPage({ closed: 'false', live: 'true', tag: 'sports', limit: '10', offset: String(o) }))
     )).flat();
 
-    // Phase 2: Today + tomorrow events (broader coverage, 400 events = covers full day)
+    // Phase 2: Recent past + today + tomorrow events
+    // Some tournaments (T10 League, Legends Cricket, etc.) set event_date to the tournament
+    // start date, not individual match dates — so we fetch recent past dates too
+    const yesterday = new Date(now.getTime() - 86400000).toISOString().split('T')[0];
+    const dayBefore = new Date(now.getTime() - 2 * 86400000).toISOString().split('T')[0];
     const todayOffsets = Array.from({ length: 40 }, (_, i) => i * 10); // 0..390
-    const tomorrowOffsets = [0, 10, 20, 30, 40]; // up to 50 tomorrow events
+    const recentOffsets = Array.from({ length: 10 }, (_, i) => i * 10); // 0..90
+    const tomorrowOffsets = Array.from({ length: 10 }, (_, i) => i * 10); // 0..90
     const dateResults: PMEvent[] = (await Promise.all([
       ...todayOffsets.map(o => fetchPage({ closed: 'false', event_date: today, limit: '10', offset: String(o) })),
       ...tomorrowOffsets.map(o => fetchPage({ closed: 'false', event_date: tomorrow, limit: '10', offset: String(o) })),
+      ...recentOffsets.map(o => fetchPage({ closed: 'false', event_date: yesterday, limit: '10', offset: String(o) })),
+      ...recentOffsets.map(o => fetchPage({ closed: 'false', event_date: dayBefore, limit: '10', offset: String(o) })),
     ])).flat();
 
     const results = [liveResults, dateResults];
