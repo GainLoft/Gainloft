@@ -157,17 +157,42 @@ async function scrapePandaScore(): Promise<TeamEntry[]> {
   return teams;
 }
 
+// Map from ESPN config tag → label (for reverse lookup)
+const TAG_TO_LABEL: Record<string, string> = {};
+for (const cfg of ESPN_LEAGUES) TAG_TO_LABEL[cfg.tag] = cfg.label;
+for (const cfg of PANDASCORE_GAMES) TAG_TO_LABEL[cfg.tag] = cfg.label;
+
 function buildLogoMap(teams: TeamEntry[]): Record<string, string> {
   const map: Record<string, string> = {};
 
+  // Build reverse mapping: label → all matching tags
+  const labelToTags: Record<string, string[]> = {};
+  for (const cfg of ESPN_LEAGUES) {
+    if (!labelToTags[cfg.label]) labelToTags[cfg.label] = [];
+    labelToTags[cfg.label].push(cfg.tag);
+  }
+  for (const cfg of PANDASCORE_GAMES) {
+    if (!labelToTags[cfg.label]) labelToTags[cfg.label] = [];
+    labelToTags[cfg.label].push(cfg.tag);
+  }
+
   for (const t of teams) {
-    const league = t.league;
-    // Index by multiple keys for flexible matching
+    const league = t.league; // ESPN label like "NCAAB", "Liga MX"
+    // Index by label-based keys
     if (t.abbr) map[`${league}:${t.abbr}`] = t.logo_url;
     if (t.name) map[`${league}:${t.name.toLowerCase()}`] = t.logo_url;
     if (t.short_name) map[`${league}:${t.short_name.toLowerCase()}`] = t.logo_url;
-    // Also index by just abbreviation (cross-league fallback)
+    // Also index by tag slugs (e.g., "nba:LAL", "mex:AME", "ncaa:DUKE")
+    // This matches Polymarket's tag slugs directly
+    for (const tag of (labelToTags[league] || [])) {
+      if (t.abbr) map[`${tag}:${t.abbr}`] = t.logo_url;
+      if (t.name) map[`${tag}:${t.name.toLowerCase()}`] = t.logo_url;
+      if (t.short_name) map[`${tag}:${t.short_name.toLowerCase()}`] = t.logo_url;
+    }
+    // Cross-league fallback by abbreviation
     if (t.abbr) map[`*:${t.abbr}`] = t.logo_url;
+    // Also index by lowercase name globally for fuzzy matching
+    if (t.name) map[`*:${t.name.toLowerCase()}`] = t.logo_url;
   }
 
   return map;

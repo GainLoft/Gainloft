@@ -478,13 +478,26 @@ export function buildMatchInfo(event: PMEvent, logoMap?: Record<string, string>)
   const S3_BASE = 'https://polymarket-upload.s3.us-east-2.amazonaws.com';
   const isIndividualSport = event.tags?.some(t => INDIVIDUAL_SPORT_TAGS.has(t.slug));
 
-  // Helper: look up logo from scraped map (league:ABBR, league:name, *:ABBR)
+  // Collect tag slugs for lookup (e.g., "nba", "mex", "ncaa-basketball")
+  const tagSlugs = (event.tags || []).map(t => t.slug);
+
+  // Helper: look up logo from scraped map
+  // Try: league_label:ABBR, tag_slug:ABBR, league_label:name, tag_slug:name, *:ABBR, *:name
   const lookupLogo = (teamName: string, teamAbbr: string): string => {
     if (!logoMap) return '';
-    return logoMap[`${league}:${teamAbbr}`]
-      || logoMap[`${league}:${teamName.toLowerCase()}`]
-      || logoMap[`*:${teamAbbr}`]
-      || '';
+    const nameLower = teamName.toLowerCase();
+    // Try by league label
+    if (logoMap[`${league}:${teamAbbr}`]) return logoMap[`${league}:${teamAbbr}`];
+    if (logoMap[`${league}:${nameLower}`]) return logoMap[`${league}:${nameLower}`];
+    // Try by each tag slug (matches Polymarket tag → ESPN tag mapping)
+    for (const slug of tagSlugs) {
+      if (logoMap[`${slug}:${teamAbbr}`]) return logoMap[`${slug}:${teamAbbr}`];
+      if (logoMap[`${slug}:${nameLower}`]) return logoMap[`${slug}:${nameLower}`];
+    }
+    // Cross-league fallback
+    if (logoMap[`*:${teamAbbr}`]) return logoMap[`*:${teamAbbr}`];
+    if (logoMap[`*:${nameLower}`]) return logoMap[`*:${nameLower}`];
+    return '';
   };
 
   let logo1 = lookupLogo(team1Name, abbr1);
