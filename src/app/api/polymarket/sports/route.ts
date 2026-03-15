@@ -333,15 +333,18 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
       if (ev.closed) continue;
       if (!/vs\.?/i.test(ev.title)) continue;
       const isApiLive = liveIds.has(ev.id);
+      const gammaLive = (ev as any).live === true;
       const isInDisplayOrder = earlyDisplayOrder.has(ev.slug);
-      // Trust Polymarket: skip settlement checks for events in their display order or live API
-      if (!isApiLive && !isInDisplayOrder && isMatchSettled(ev)) continue;
+      // Trust Polymarket: skip settlement checks for events confirmed live by API or display order
+      // BUT if Gamma API explicitly says live=false, don't override
+      const trustedLive = isApiLive || (isInDisplayOrder && gammaLive);
+      if (!trustedLive && isMatchSettled(ev)) continue;
       const matchInfo = buildMatchInfo(ev, logoMap);
       if (!matchInfo) continue;
-      // Skip final filter for events Polymarket shows as live
-      if (matchInfo.status === 'final' && !isApiLive && !isInDisplayOrder) continue;
-      // Force live status for events confirmed by Polymarket (API or display order)
-      if (isApiLive || isInDisplayOrder) {
+      // Skip final filter for events Polymarket confirms as live
+      if (matchInfo.status === 'final' && !trustedLive) continue;
+      // Force live status for events confirmed by Polymarket
+      if (trustedLive) {
         matchInfo.status = 'live';
       }
       // Extract game time data from Gamma API
