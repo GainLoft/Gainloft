@@ -182,12 +182,12 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
     };
 
     // Gamma API caps at 10 events per page — paginate in parallel
-    // Fetch in two phases to avoid rate limits while maximizing coverage
-    const liveOffsets = [0, 10, 20, 30, 40]; // up to 50 live events
+    // Use tag=sports to match Polymarket's sports page (includes esports, cricket, table-tennis etc.)
+    const liveOffsets = [0, 10, 20, 30, 40, 50, 60]; // up to 70 live sports events
 
-    // Phase 1: Live events (fast, small set)
+    // Phase 1: Live sports events (tag=sports matches Polymarket's sports page)
     const liveResults: PMEvent[] = (await Promise.all(
-      liveOffsets.map(o => fetchPage({ closed: 'false', live: 'true', limit: '10', offset: String(o) }))
+      liveOffsets.map(o => fetchPage({ closed: 'false', live: 'true', tag: 'sports', limit: '10', offset: String(o) }))
     )).flat();
 
     // Phase 2: Today + tomorrow events (broader coverage, 400 events = covers full day)
