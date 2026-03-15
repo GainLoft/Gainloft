@@ -284,52 +284,9 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     const merged = mergeMatchEvents(rawEvents);
 
-    // Polymarket groups live events by sport/league, then sorts groups by max volume.
-    // Extract league key: most specific tag (not generic, not broad sport category)
-    const GENERIC_TAGS = new Set(['sports', 'esports', 'games']);
-    const SPORT_PARENT_TAGS = new Set(['soccer', 'cricket', 'rugby', 'tennis', 'hockey', 'baseball', 'basketball', 'american-football', 'mma', 'boxing', 'golf', 'formula-1', 'nascar', 'table-tennis']);
-    const getLeagueKey = (ev: EventGroup): string => {
-      const tags = (ev.tags || []).map(t => t.slug);
-      // Prefer league-level tag (not generic, not broad sport)
-      const league = tags.find(s => !GENERIC_TAGS.has(s) && !SPORT_PARENT_TAGS.has(s));
-      if (league) return league;
-      // Fall back to sport-level tag (e.g., for esports: counter-strike-2, dota-2)
-      const sport = tags.find(s => !GENERIC_TAGS.has(s));
-      return sport || ev.category || 'other';
-    };
-
-    // Split into live and upcoming
-    const liveEvents = merged.filter(e => e.match?.status === 'live');
-    const upcomingEvents = merged.filter(e => e.match?.status !== 'live');
-
-    // Group live events by league, sort groups by max volume, sort within by volume
-    const leagueGroups = new Map<string, EventGroup[]>();
-    for (const ev of liveEvents) {
-      const key = getLeagueKey(ev);
-      if (!leagueGroups.has(key)) leagueGroups.set(key, []);
-      leagueGroups.get(key)!.push(ev);
-    }
-    // Preserve API response order within each group (matches Polymarket)
-    const groupEntries = Array.from(leagueGroups.entries());
-    // Sort groups by total group volume DESC (like Polymarket)
-    const sortedGroups = groupEntries
-      .sort(([, a], [, b]) => {
-        const aTotal = a.reduce((s, e) => s + (e.volume || 0), 0);
-        const bTotal = b.reduce((s, e) => s + (e.volume || 0), 0);
-        return bTotal - aTotal;
-      });
-    const sortedLive = sortedGroups.flatMap(([, group]) => group);
-
-    // Sort upcoming by startTime ASC (actual match start, not market close)
-    upcomingEvents.sort((a, b) => {
-      const aStart = startTimeMap.get(a.id) || a.end_date_iso || '';
-      const bStart = startTimeMap.get(b.id) || b.end_date_iso || '';
-      return aStart.localeCompare(bStart);
-    });
-
-    const sorted = [...sortedLive, ...upcomingEvents];
-
-    const events = sorted;
+    // Preserve Polymarket's Gamma API order — it already sorts correctly
+    // (live events grouped by league/volume, then upcoming by start time)
+    const events = merged;
     const total = events.length;
     const trimmed = events.slice(0, limit);
     const hasMore = trimmed.length < total;
