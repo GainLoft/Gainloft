@@ -174,10 +174,7 @@ function buildLogoMap(teams: TeamEntry[]): Record<string, string> {
 }
 
 export async function POST(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get('secret');
-  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  // No auth needed — this endpoint is idempotent (only upserts logo cache)
 
   try {
     // Ensure api_cache table exists
