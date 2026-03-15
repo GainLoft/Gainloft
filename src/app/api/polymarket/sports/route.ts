@@ -209,9 +209,10 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     const results = [liveResults, dateResults];
 
-    // Track which events are confirmed live
-    // Track which events are confirmed live
+    // Track which events are confirmed live + their position in Polymarket's API order
     const liveIds = new Set(liveResults.map(ev => ev.id));
+    const liveOrder = new Map<string, number>(); // event ID → position in live results
+    liveResults.forEach((ev, i) => { if (!liveOrder.has(ev.id)) liveOrder.set(ev.id, i); });
 
     // Deduplicate: live events first, then date-based events
     const seen = new Set<string>();
@@ -284,11 +285,30 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     const merged = mergeMatchEvents(rawEvents);
 
-    // Stable sort: live events first, upcoming after — preserve API order within each group
+    // Sort to match Polymarket's exact order:
+    // 1. API-confirmed live events in Polymarket's live API order
+    // 2. Heuristic-detected live events by volume DESC
+    // 3. Upcoming events by start time ASC
     const events = merged.sort((a, b) => {
-      const aLive = a.match?.status === 'live' ? 0 : 1;
-      const bLive = b.match?.status === 'live' ? 0 : 1;
-      return aLive - bLive;
+      const aApiLive = liveOrder.has(a.id);
+      const bApiLive = liveOrder.has(b.id);
+      const aLive = a.match?.status === 'live';
+      const bLive = b.match?.status === 'live';
+
+      // Tier 1: API-confirmed live (Polymarket's exact order)
+      if (aApiLive && bApiLive) return (liveOrder.get(a.id) || 0) - (liveOrder.get(b.id) || 0);
+      if (aApiLive && !bApiLive) return -1;
+      if (!aApiLive && bApiLive) return 1;
+
+      // Tier 2: Heuristic live by volume DESC
+      if (aLive && !bLive) return -1;
+      if (!aLive && bLive) return 1;
+      if (aLive && bLive) return (b.volume || 0) - (a.volume || 0);
+
+      // Tier 3: Upcoming by start time ASC
+      const aStart = startTimeMap.get(a.id) || a.end_date_iso || '';
+      const bStart = startTimeMap.get(b.id) || b.end_date_iso || '';
+      return aStart.localeCompare(bStart);
     });
     const total = events.length;
     const trimmed = events.slice(0, limit);
