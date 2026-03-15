@@ -284,9 +284,12 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     const merged = mergeMatchEvents(rawEvents);
 
-    // Preserve Polymarket's Gamma API order — it already sorts correctly
-    // (live events grouped by league/volume, then upcoming by start time)
-    const events = merged;
+    // Stable sort: live events first, upcoming after — preserve API order within each group
+    const events = merged.sort((a, b) => {
+      const aLive = a.match?.status === 'live' ? 0 : 1;
+      const bLive = b.match?.status === 'live' ? 0 : 1;
+      return aLive - bLive;
+    });
     const total = events.length;
     const trimmed = events.slice(0, limit);
     const hasMore = trimmed.length < total;
