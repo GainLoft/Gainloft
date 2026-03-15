@@ -323,9 +323,19 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     const merged = mergeMatchEvents(rawEvents);
 
-    // Sort to match Polymarket's EXACT display order by scraping their SSR HTML.
-    // This is the root cause fix — their sort algorithm is proprietary (not volume, not API order).
+    // Mirror Polymarket's EXACT display: scrape their SSR HTML for the authoritative
+    // list of live events + order. Events not in their display are demoted to upcoming.
     const displayOrder = await getPolymarketDisplayOrder();
+
+    // If scrape succeeded, use it as the single source of truth for live events
+    if (displayOrder.size > 0) {
+      for (const ev of merged) {
+        if (ev.match?.status === 'live' && !displayOrder.has(ev.slug)) {
+          // Polymarket doesn't show this as live — demote to upcoming
+          ev.match.status = 'upcoming';
+        }
+      }
+    }
 
     const events = merged.sort((a, b) => {
       const aLive = a.match?.status === 'live';
@@ -336,15 +346,10 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
       if (!aLive && bLive) return 1;
 
       if (aLive && bLive) {
-        // Among live events: use Polymarket's scraped display order
+        // Exact Polymarket display order
         const aPos = displayOrder.get(a.slug) ?? 9999;
         const bPos = displayOrder.get(b.slug) ?? 9999;
-        if (aPos !== bPos) return aPos - bPos;
-        // Fallback for events not in scraped order: use Gamma API order, then volume
-        const aApi = liveOrder.get(a.id) ?? 9999;
-        const bApi = liveOrder.get(b.id) ?? 9999;
-        if (aApi !== bApi) return aApi - bApi;
-        return (b.volume || 0) - (a.volume || 0);
+        return aPos - bPos;
       }
 
       // Upcoming: by start time ASC
