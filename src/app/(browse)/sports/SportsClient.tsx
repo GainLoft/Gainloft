@@ -462,84 +462,101 @@ function MatchCard({
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, marginLeft: 16 }}>
-            <button
-              className="btn-yes-hover"
-              onClick={(e) => { e.stopPropagation(); if (ml) onOutcomeClick(ml.label, 0, ml.markets[0]?.id); }}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                gap: 6, padding: '7px 0', borderRadius: 8,
-                background: 'var(--green-bg)', color: 'var(--yes-green)',
-                border: 'none', cursor: 'pointer',
-                minWidth: 130, fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {t1.abbr} {Math.round(t1Price * 100)}¢
-            </button>
-            {is3Way && (
+          {/* Moneyline + Spread + Total columns (Polymarket 3-column layout) */}
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 16 }}>
+            {/* Moneyline column */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <button
-                onClick={(e) => { e.stopPropagation(); if (ml) onOutcomeClick(ml.label, 2, ml.markets[2]?.id); }}
+                className="btn-yes-hover"
+                onClick={(e) => { e.stopPropagation(); if (ml) onOutcomeClick(ml.label, 0, ml.markets[0]?.id); }}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  gap: 6, padding: '7px 0', borderRadius: 8,
-                  background: 'var(--bg-surface)', color: 'var(--text-secondary)',
-                  border: '1px solid var(--border)', cursor: 'pointer',
-                  minWidth: 130, fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
+                  padding: '7px 0', borderRadius: 8,
+                  background: 'var(--green-bg)', color: 'var(--yes-green)',
+                  border: 'none', cursor: 'pointer',
+                  minWidth: 100, fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                Draw {Math.round(drawPrice * 100)}¢
+                {t1.abbr} {Math.round(t1Price * 100)}¢
               </button>
-            )}
-            <button
-              className="btn-no-hover"
-              onClick={(e) => { e.stopPropagation(); if (ml) onOutcomeClick(ml.label, 1, ml.markets[1]?.id); }}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                gap: 6, padding: '7px 0', borderRadius: 8,
-                background: 'var(--red-bg)', color: 'var(--no-red)',
-                border: 'none', cursor: 'pointer',
-                minWidth: 130, fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {t2.abbr} {Math.round(t2Price * 100)}¢
-            </button>
-          </div>
-        </div>
-
-        {/* Additional market type rows (spread, O/U) */}
-        {(spreadMt || ouMt) && (
-          <div style={{
-            display: 'flex', gap: 8, marginTop: 10, paddingTop: 10,
-            borderTop: '1px solid var(--border)',
-          }}>
-            {[spreadMt, ouMt].filter(Boolean).map((mt) => {
-              const p0 = mt!.markets[0];
-              const p1 = mt!.markets[1];
-              return (
+              {is3Way && (
                 <button
-                  key={mt!.id}
-                  onClick={(e) => { e.stopPropagation(); onOutcomeClick(mt!.label, 0); }}
+                  onClick={(e) => { e.stopPropagation(); if (ml) onOutcomeClick(ml.label, 2, ml.markets[2]?.id); }}
                   style={{
-                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '6px 12px', borderRadius: 8,
-                    border: '1px solid var(--border)', background: 'var(--bg-surface)',
-                    cursor: 'pointer', fontSize: 12, fontWeight: 500,
-                    color: 'var(--text-secondary)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '7px 0', borderRadius: 8,
+                    background: 'var(--bg-surface)', color: 'var(--text-secondary)',
+                    border: '1px solid var(--border)', cursor: 'pointer',
+                    minWidth: 100, fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>
-                    {mt!.label.replace(/^(More Markets|Halftime Result|Team Top Batter|Most Sixes|Toss Match Double):\s*/i, '')}
-                  </span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                    {p0.label.slice(0, 6)} {Math.round(p0.price * 100)}¢
-                    {' · '}
-                    {p1.label.slice(0, 6)} {Math.round(p1.price * 100)}¢
-                  </span>
+                  Draw {Math.round(drawPrice * 100)}¢
                 </button>
-              );
-            })}
+              )}
+              <button
+                className="btn-no-hover"
+                onClick={(e) => { e.stopPropagation(); if (ml) onOutcomeClick(ml.label, 1, ml.markets[1]?.id); }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: '7px 0', borderRadius: 8,
+                  background: 'var(--red-bg)', color: 'var(--no-red)',
+                  border: 'none', cursor: 'pointer',
+                  minWidth: 100, fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {t2.abbr} {Math.round(t2Price * 100)}¢
+              </button>
+            </div>
+            {/* Spread column */}
+            {spreadMt && (
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                {[0, 1].map((i) => {
+                  const p = spreadMt.markets[i];
+                  return (
+                    <button
+                      key={i}
+                      onClick={(e) => { e.stopPropagation(); onOutcomeClick(spreadMt.label, i); }}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: 8, padding: '7px 10px', borderRadius: 8,
+                        border: '1px solid var(--border)', background: 'var(--bg-surface)',
+                        cursor: 'pointer', minWidth: 110, fontSize: 12, fontWeight: 500,
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      <span style={{ whiteSpace: 'nowrap' }}>{p.label.slice(0, 10)}</span>
+                      <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{Math.round(p.price * 100)}¢</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {/* Total (O/U) column */}
+            {ouMt && (
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                {[0, 1].map((i) => {
+                  const p = ouMt.markets[i];
+                  return (
+                    <button
+                      key={i}
+                      onClick={(e) => { e.stopPropagation(); onOutcomeClick(ouMt.label, i); }}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: 8, padding: '7px 10px', borderRadius: 8,
+                        border: '1px solid var(--border)', background: 'var(--bg-surface)',
+                        cursor: 'pointer', minWidth: 100, fontSize: 12, fontWeight: 500,
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      <span style={{ whiteSpace: 'nowrap' }}>{p.label.slice(0, 6)}</span>
+                      <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{Math.round(p.price * 100)}¢</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -940,59 +957,51 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         });
       }
     } else {
-      // Like Polymarket: group LIVE events first by league, then upcoming events separately
-      // Pass 1: only live events
-      displayEvents.forEach((eg) => {
-        if (!eg.match || eg.match.status !== 'live') return;
+      // Polymarket-exact: sort events by volume DESC, group consecutive same-league runs.
+      // Same league CAN appear multiple times if split by higher-volume events from other leagues.
+      const liveEvents = displayEvents
+        .filter(eg => eg.match?.status === 'live')
+        .sort((a, b) => (b.volume || 0) - (a.volume || 0));
+      const upcomingEvents = displayEvents
+        .filter(eg => eg.match && eg.match.status !== 'live' && eg.match.status !== 'final' && !(eg.match as any).ended)
+        .sort((a, b) => (b.volume || 0) - (a.volume || 0));
+
+      let gIdx = 0;
+      let lastSlug = '';
+      for (const eg of liveEvents) {
         const { slug, label, sport } = getLeagueKey(eg);
-        if (!grouped[slug]) { grouped[slug] = []; groupLabels[slug] = label; groupOrder.push(slug); }
-        groupSport[slug] = sport;
-        grouped[slug].push(eg);
-      });
-      // Pass 2: upcoming events go into their own league groups AFTER all live groups
-      // Skip ended/final events — they should not appear at all
-      displayEvents.forEach((eg) => {
-        if (!eg.match || eg.match.status === 'live') return;
-        if (eg.match.status === 'final' || (eg.match as any).ended) return;
+        if (slug !== lastSlug) {
+          gIdx++;
+          lastSlug = slug;
+          const key = `live-${gIdx}`;
+          grouped[key] = [];
+          groupLabels[key] = label;
+          groupSport[key] = sport;
+          groupOrder.push(key);
+        }
+        grouped[groupOrder[groupOrder.length - 1]].push(eg);
+      }
+      lastSlug = '';
+      for (const eg of upcomingEvents) {
         const { slug, label, sport } = getLeagueKey(eg);
-        const upKey = `upcoming:${slug}`;
-        if (!grouped[upKey]) { grouped[upKey] = []; groupLabels[upKey] = label; groupOrder.push(upKey); }
-        groupSport[upKey] = sport;
-        grouped[upKey].push(eg);
-      });
+        if (slug !== lastSlug) {
+          gIdx++;
+          lastSlug = slug;
+          const key = `upcoming-${gIdx}`;
+          grouped[key] = [];
+          groupLabels[key] = label;
+          groupSport[key] = sport;
+          groupOrder.push(key);
+        }
+        grouped[groupOrder[groupOrder.length - 1]].push(eg);
+      }
     }
   }
 
-  // Sort group keys to match Polymarket's frontend order:
-  // 1. Live groups sorted by parent sport total volume DESC, then league volume DESC within sport
-  // 2. Upcoming groups after all live groups, same sport/league volume order
-  // Uses groupSport (derived from event tags) — NOT static SPORT_PARENT lookup
+  // Polymarket-exact: groups already in volume-sorted order from consecutive grouping
   const sortedGroupKeys = (() => {
     if (isFiltered) return Object.keys(grouped).sort((a, b) => a.localeCompare(b));
-
-    const liveKeys = groupOrder.filter(k => !k.startsWith('upcoming:'));
-    const upcomingKeys = groupOrder.filter(k => k.startsWith('upcoming:'));
-
-    // Calculate volume per group
-    const groupVol = (key: string) => (grouped[key] || []).reduce((s, e) => s + (e.volume || 0), 0);
-
-    // Sort a set of keys by: sport total volume DESC → league volume DESC within sport
-    const sortByPolymarketOrder = (keys: string[]) => {
-      // Accumulate total volume per parent sport (using tag-derived sport)
-      const sportVol: Record<string, number> = {};
-      for (const k of keys) {
-        const sport = groupSport[k] || 'other';
-        sportVol[sport] = (sportVol[sport] || 0) + groupVol(k);
-      }
-      return [...keys].sort((a, b) => {
-        const sa = groupSport[a] || 'other';
-        const sb = groupSport[b] || 'other';
-        if (sa !== sb) return (sportVol[sb] || 0) - (sportVol[sa] || 0);
-        return groupVol(b) - groupVol(a);
-      });
-    };
-
-    return [...sortByPolymarketOrder(liveKeys), ...sortByPolymarketOrder(upcomingKeys)];
+    return groupOrder;
   })();
 
   /* ── Top leagues for sidebar quick-access (auto-scraped from Polymarket, fallback to curated) ── */
@@ -1300,64 +1309,35 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                 {sortedGroupKeys.map((key) => {
                   const groupEvents = grouped[key];
                   const label = groupLabels[key] || key;
-                  const hasLive = groupEvents.some(e => e.match?.status === 'live');
-                  // Strip upcoming: prefix for taxonomy lookup
-                  const leagueKey = key.replace(/^upcoming:/, '');
-                  // Derive parent sport from taxonomy (dynamic), fallback to SPORT_PARENT (static)
-                  const taxonomySport = leagueToSport[leagueKey];
-                  const parentSport = taxonomySport?.slug || SPORT_PARENT[leagueKey] || leagueKey;
-                  const parentSportLabel = taxonomySport?.label || labelMap[parentSport] || parentSport.charAt(0).toUpperCase() + parentSport.slice(1);
-                  const accentColor = sportColor(parentSport);
+                  // Check if any event in group has spread or O/U (for Polymarket column headers)
+                  const hasColumns = groupEvents.some(e => {
+                    if (!e.match) return false;
+                    return e.match.market_types.some((mt: any) =>
+                      (/spread|handicap|\(-?\d/i.test(mt.label) || /O\/U\s|totals|over.?under/i.test(mt.label)) &&
+                      mt.markets[0]?.price > 0.01 && mt.markets[0]?.price < 0.99
+                    );
+                  });
                   return (
-                    <div key={key} style={{ marginBottom: 20 }}>
+                    <div key={key} style={{ marginBottom: 24 }}>
+                      {/* Polymarket-style plain text header + column labels */}
                       <div style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        marginBottom: 10, padding: '8px 14px',
-                        borderRadius: 10,
-                        background: `linear-gradient(135deg, ${accentColor}12, ${accentColor}06)`,
-                        borderLeft: `3px solid ${accentColor}`,
+                        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+                        marginBottom: 8,
                       }}>
-                        {/* League logo or sport icon */}
-                        <div style={{
-                          width: 28, height: 28, borderRadius: 6,
-                          background: `${accentColor}1A`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          flexShrink: 0,
-                        }}>
-                          <LeagueIcon slug={leagueKey} size={18} />
-                        </div>
-                        {/* League + sport labels */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px', lineHeight: 1.2 }}>
-                            {label}
-                          </div>
-                          {label !== parentSportLabel && (
-                            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginTop: 1 }}>
-                              {parentSportLabel}
-                            </div>
-                          )}
-                        </div>
-                        {/* Live badge */}
-                        {hasLive && (
-                          <span style={{
-                            fontSize: 10, fontWeight: 700, color: '#fff',
-                            background: '#ef4444', borderRadius: 4,
-                            padding: '2px 6px', letterSpacing: '0.5px',
-                            textTransform: 'uppercase', flexShrink: 0,
-                            animation: 'pulse-live 2s ease-in-out infinite',
-                          }}>
-                            LIVE
-                          </span>
-                        )}
-                        {/* Count pill */}
-                        <span style={{
-                          fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
-                          background: 'var(--bg-surface)', borderRadius: 999,
-                          padding: '2px 8px', flexShrink: 0,
-                          border: '1px solid var(--border)',
-                        }}>
-                          {groupEvents.length}
+                        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {label}
                         </span>
+                        {hasColumns && (
+                          <div style={{
+                            display: 'flex', gap: 6,
+                            fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+                            textTransform: 'uppercase', letterSpacing: '0.5px',
+                          }}>
+                            <span style={{ width: 100, textAlign: 'center' }}>Moneyline</span>
+                            <span style={{ width: 110, textAlign: 'center' }}>Spread</span>
+                            <span style={{ width: 100, textAlign: 'center' }}>Total</span>
+                          </div>
+                        )}
                       </div>
                       {groupEvents.map((event) => (
                         <MatchCard
