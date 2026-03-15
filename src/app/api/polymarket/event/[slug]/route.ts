@@ -60,6 +60,12 @@ export async function GET(
         const matchInfo = buildMatchInfo(pmEvent, logoMap);
         if (matchInfo) {
           eventGroup.match = matchInfo;
+          // Fetch "-more-markets" companion event and merge spreads/totals/BTTS
+          const moreResult = await fetchMoreMarkets(slug, matchInfo);
+          if (moreResult) {
+            matchInfo.market_types.push(...moreResult.marketTypes);
+            eventGroup.markets.push(...moreResult.markets);
+          }
         }
       }
 
@@ -449,6 +455,36 @@ async function fetchFromPolymarket(slug: string): Promise<any | null> {
             markets,
           };
 
+          // Build match info for sports events from gamma API
+          const hasSportsTag = (ev.tags || []).some((t: any) =>
+            ['sports', 'esports'].includes(t.slug)
+          );
+          if (hasSportsTag) {
+            const pmEvent: PMEvent = {
+              id: ev.id, ticker: ev.ticker || ev.slug, slug: ev.slug,
+              title: ev.title, description: ev.description || '',
+              startDate: ev.startDate || '', creationDate: ev.creationDate || '',
+              endDate: ev.endDate || '', image: ev.image || '', icon: ev.icon || '',
+              active: ev.active, closed: ev.closed,
+              liquidity: ev.liquidity || 0, volume: ev.volume || 0,
+              volume24hr: ev.volume24hr || 0, volume1wk: ev.volume1wk || 0,
+              volume1mo: ev.volume1mo || 0, commentCount: ev.commentCount || 0,
+              negRisk: ev.negRisk || false, competitive: ev.competitive || 0,
+              markets: pmMarkets, tags: (ev.tags || []).map((t: any) => ({ id: t.id || t.slug, label: t.label, slug: t.slug })),
+              createdAt: ev.createdAt || '', updatedAt: ev.updatedAt || '',
+            };
+            const logoMap = await loadLogoMap();
+            const matchInfo = buildMatchInfo(pmEvent, logoMap);
+            if (matchInfo) {
+              eventGroup.match = matchInfo;
+              const moreResult = await fetchMoreMarkets(ev.slug, matchInfo);
+              if (moreResult) {
+                matchInfo.market_types.push(...moreResult.marketTypes);
+                eventGroup.markets.push(...moreResult.markets);
+              }
+            }
+          }
+
           const seriesRelated = ev.seriesSlug
             ? await fetchSeriesRelated(ev.seriesSlug, ev.slug)
             : [];
@@ -534,6 +570,243 @@ async function fetchFromPolymarket(slug: string): Promise<any | null> {
     return null;
   } catch (err) {
     console.error('Polymarket gamma fallback error:', err);
+    return null;
+  }
+}
+
+/**
+ * Fetch the "-more-markets" companion event from Polymarket Gamma API.
+ * Parses Spread, O/U, and BTTS markets and returns them as market_types + Market objects.
+ */
+async function fetchMoreMarkets(
+  slug: string,
+  matchInfo: MatchInfo
+): Promise<{ marketTypes: MatchInfo['market_types']; markets: Market[] } | null> {
+  try {
+    const moreSlug = `${slug}-more-markets`;
+    const res = await fetch(
+      `https://gamma-api.polymarket.com/events?slug=${encodeURIComponent(moreSlug)}&limit=1`,
+      { cache: 'no-store' }
+    );
+    if (!res.ok) return null;
+    const events = await res.json();
+    if (!events?.length) return null;
+
+    const moreEvent = events[0];
+    const rawMarkets: any[] = moreEvent.markets || [];
+    if (rawMarkets.length === 0) return null;
+
+    const team1 = matchInfo.team1;
+    const team2 = matchInfo.team2;
+    const marketTypes: MatchInfo['market_types'] = [];
+    const outMarkets: Market[] = [];
+
+    // Helper to safely parse array fields
+    const parseArr = (val: unknown): string[] => {
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string') { try { return JSON.parse(val); } catch { return []; } }
+      return [];
+    };
+
+    // Helper to create a Market object for the trade panel
+    const toMarket = (m: any): Market => ({
+      id: m.id,
+      condition_id: m.conditionId || '',
+      question_id: m.questionID || '',
+      question: m.question,
+      group_item_title: m.groupItemTitle || undefined,
+      description: m.description || null,
+      category: moreEvent.category || '',
+      tags: (moreEvent.tags || []).map((t: any) => ({ label: t.label, slug: t.slug })),
+      slug: m.slug,
+      image_url: m.image || moreEvent.image || null,
+      resolution_source: m.resolutionSource || null,
+      tokens: parseOutcomePrices(m),
+      minimum_tick_size: m.orderPriceMinTickSize || 0.01,
+      minimum_order_size: m.orderMinSize || 5,
+      active: m.active && !m.closed,
+      closed: m.closed || false,
+      resolved: !!m.closedTime,
+      winning_outcome: null,
+      resolved_at: m.closedTime || null,
+      accepting_orders: m.active && !m.closed,
+      end_date_iso: m.endDate || null,
+      volume: parseFloat(m.volume) || 0,
+      volume_24hr: 0,
+      liquidity: parseFloat(m.liquidity) || 0,
+      neg_risk: moreEvent.negRisk || false,
+      created_at: m.createdAt || '',
+    });
+
+    // ── Classify markets ──
+
+    // Spread markets: "Spread: TeamName (-1.5)" or "Spread: TeamName (+1.5)"
+    const spreadMarkets = rawMarkets.filter(m =>
+      /^Spread:/i.test(m.question || '')
+    );
+
+    // O/U markets: "Team1 vs. Team2: O/U 2.5"
+    const ouMarkets = rawMarkets.filter(m =>
+      /O\/U\s+[\d.]+/i.test(m.question || '')
+    );
+
+    // BTTS: "Team1 vs. Team2: Both Teams to Score"
+    const bttsMarket = rawMarkets.find(m =>
+      /both teams to score/i.test(m.question || '')
+    );
+
+    // ── Process Spreads ──
+    // Group by handicap value: e.g., -1.5 has two markets (one per team)
+    if (spreadMarkets.length > 0) {
+      // Extract handicap value from each market question
+      // "Spread: Crystal Palace FC (-1.5)" → handicap = -1.5
+      const spreadsByValue = new Map<number, any[]>();
+      for (const m of spreadMarkets) {
+        const match = (m.question || '').match(/\((-?[\d.]+)\)/);
+        if (match) {
+          const val = parseFloat(match[1]);
+          if (!spreadsByValue.has(val)) spreadsByValue.set(val, []);
+          spreadsByValue.get(val)!.push(m);
+        }
+      }
+
+      // Sort handicap values ascending
+      const sortedValues = Array.from(spreadsByValue.keys()).sort((a, b) => a - b);
+
+      // Build one unified "Spreads" market type with slider_values
+      // For each value, we create two outcome buttons (team1 spread, team2 spread)
+      let totalSpreadVol = 0;
+      const allSpreadEntries: { value: number; markets: { id: string; label: string; price: number }[] }[] = [];
+
+      for (const val of sortedValues) {
+        const pair = spreadsByValue.get(val)!;
+        // Determine which market belongs to which team
+        let t1Market: any = null;
+        let t2Market: any = null;
+        for (const m of pair) {
+          const q = (m.question || '').toLowerCase();
+          if (q.includes(team1.name.toLowerCase()) || q.includes(team1.abbr.toLowerCase())) {
+            t1Market = m;
+          } else {
+            t2Market = m;
+          }
+        }
+        // If only one market for this value, try to infer
+        if (!t1Market && !t2Market && pair.length === 1) {
+          t1Market = pair[0];
+        }
+
+        const entries: { id: string; label: string; price: number }[] = [];
+
+        if (t1Market) {
+          const prices = parseArr(t1Market.outcomePrices);
+          const yesPrice = parseFloat(prices[0] || '0.5');
+          entries.push({
+            id: `${t1Market.id}-0`,
+            label: `${team1.abbr} ${val > 0 ? '+' : ''}${val}`,
+            price: yesPrice,
+          });
+          totalSpreadVol += parseFloat(t1Market.volume || '0');
+          outMarkets.push(toMarket(t1Market));
+        }
+
+        if (t2Market) {
+          const prices = parseArr(t2Market.outcomePrices);
+          const yesPrice = parseFloat(prices[0] || '0.5');
+          // The opposing team gets the opposite sign
+          const oppositeVal = -val;
+          entries.push({
+            id: `${t2Market.id}-0`,
+            label: `${team2.abbr} ${oppositeVal > 0 ? '+' : ''}${oppositeVal}`,
+            price: yesPrice,
+          });
+          totalSpreadVol += parseFloat(t2Market.volume || '0');
+          outMarkets.push(toMarket(t2Market));
+        }
+
+        allSpreadEntries.push({ value: val, markets: entries });
+      }
+
+      if (allSpreadEntries.length > 0) {
+        // Create one market_type per spread value, and set slider_values on the first one
+        // Actually, we want a single "Spreads" card with a slider — so we store all values
+        // and only show markets for the selected value. Use slider_values field.
+        // The frontend will handle switching between values.
+        for (let i = 0; i < allSpreadEntries.length; i++) {
+          const entry = allSpreadEntries[i];
+          marketTypes.push({
+            id: `more-spread-${entry.value}`,
+            tab: 'game-lines',
+            label: 'Spreads',
+            volume: totalSpreadVol,
+            markets: entry.markets,
+            slider_values: i === 0 ? sortedValues : undefined,
+          });
+        }
+      }
+    }
+
+    // ── Process O/U (Totals) ──
+    if (ouMarkets.length > 0) {
+      // Extract O/U value: "Team1 vs. Team2: O/U 2.5" → 2.5
+      const ouByValue: { value: number; market: any }[] = [];
+      for (const m of ouMarkets) {
+        const match = (m.question || '').match(/O\/U\s+([\d.]+)/i);
+        if (match) {
+          ouByValue.push({ value: parseFloat(match[1]), market: m });
+        }
+      }
+      ouByValue.sort((a, b) => a.value - b.value);
+
+      const totalOuVol = ouByValue.reduce((s, o) => s + (parseFloat(o.market.volume || '0')), 0);
+      const ouValues = ouByValue.map(o => o.value);
+
+      for (let i = 0; i < ouByValue.length; i++) {
+        const { value, market: m } = ouByValue[i];
+        const prices = parseArr(m.outcomePrices);
+        const overPrice = parseFloat(prices[0] || '0.5');
+        const underPrice = parseFloat(prices[1] || '0.5');
+
+        marketTypes.push({
+          id: `more-ou-${value}`,
+          tab: 'game-lines',
+          label: 'Totals',
+          volume: totalOuVol,
+          markets: [
+            { id: `${m.id}-0`, label: `O ${value}`, price: overPrice },
+            { id: `${m.id}-1`, label: `U ${value}`, price: underPrice },
+          ],
+          slider_values: i === 0 ? ouValues : undefined,
+        });
+
+        outMarkets.push(toMarket(m));
+      }
+    }
+
+    // ── Process BTTS ──
+    if (bttsMarket) {
+      const prices = parseArr(bttsMarket.outcomePrices);
+      const yesPrice = parseFloat(prices[0] || '0.5');
+      const noPrice = parseFloat(prices[1] || '0.5');
+
+      marketTypes.push({
+        id: `more-btts-${bttsMarket.id}`,
+        tab: 'game-lines',
+        label: 'Both Teams to Score?',
+        volume: parseFloat(bttsMarket.volume || '0'),
+        markets: [
+          { id: `${bttsMarket.id}-0`, label: 'Yes', price: yesPrice },
+          { id: `${bttsMarket.id}-1`, label: 'No', price: noPrice },
+        ],
+      });
+
+      outMarkets.push(toMarket(bttsMarket));
+    }
+
+    if (marketTypes.length === 0) return null;
+    return { marketTypes, markets: outMarkets };
+  } catch (err) {
+    console.error('More markets fetch error:', err);
     return null;
   }
 }

@@ -2356,6 +2356,7 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
   const [contentTab, setContentTab] = useState<ContentTab>('comments');
   const [selectedOutcome, setSelectedOutcome] = useState<{ marketId: string; label: string; price: number } | null>(null);
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
+  const [sliderSelections, setSliderSelections] = useState<Record<string, number>>({});
 
   const matchDate = new Date(match.start_time);
   const dateStr = matchDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -2554,11 +2555,151 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
                 </div>
               );
             }
+
+            // Group market_types that share the same label and have slider_values
+            // e.g., multiple "Spreads" entries → one card with pill selector
+            type GroupedCard = {
+              label: string;
+              volume: number;
+              sliderValues: number[];
+              entries: typeof tabMarkets;
+              isSlider: true;
+            } | {
+              label: string;
+              mt: (typeof tabMarkets)[0];
+              isSlider: false;
+            };
+
+            const cards: GroupedCard[] = [];
+            const seenSliderLabels = new Set<string>();
+
+            for (const mt of tabMarkets) {
+              if (mt.slider_values && mt.slider_values.length > 0) {
+                // This is the first entry of a slider group
+                if (seenSliderLabels.has(mt.label)) continue;
+                seenSliderLabels.add(mt.label);
+                // Collect all entries with the same label
+                const group = tabMarkets.filter(t => t.label === mt.label);
+                cards.push({
+                  label: mt.label,
+                  volume: mt.volume,
+                  sliderValues: mt.slider_values,
+                  entries: group,
+                  isSlider: true,
+                });
+              } else if (!seenSliderLabels.has(mt.label)) {
+                // Regular card (moneyline, BTTS, etc.)
+                cards.push({ label: mt.label, mt, isSlider: false });
+              }
+            }
+
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {tabMarkets.map((mt) => {
-                  // Detect if this is a moneyline/winner market (team1 vs team2)
+                {cards.map((card) => {
+                  if (card.isSlider) {
+                    // ── Slider card (Spreads / Totals) ──
+                    const values = card.sliderValues;
+                    const selectedIdx = sliderSelections[card.label] ?? Math.floor(values.length / 2);
+                    const currentVal = values[selectedIdx] ?? values[0];
+                    const currentEntry = card.entries[selectedIdx] ?? card.entries[0];
+
+                    return (
+                      <div key={`slider-${card.label}`} style={{ borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-card)', overflow: 'hidden' }}>
+                        {/* Card header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px 0' }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{card.label}</span>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{formatVolume(card.volume)} Vol.</span>
+                        </div>
+                        {/* Pill selector */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '10px 16px 0', overflowX: 'auto' }}>
+                          <button
+                            onClick={() => setSliderSelections(prev => ({ ...prev, [card.label]: Math.max(0, selectedIdx - 1) }))}
+                            disabled={selectedIdx === 0}
+                            style={{
+                              width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border)',
+                              background: 'var(--bg-surface)', cursor: selectedIdx === 0 ? 'default' : 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                              opacity: selectedIdx === 0 ? 0.3 : 1, color: 'var(--text-primary)',
+                            }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M15 18l-6-6 6-6" /></svg>
+                          </button>
+                          <div style={{ display: 'flex', gap: 4, flex: 1, justifyContent: 'center' }}>
+                            {values.map((v, vi) => (
+                              <button
+                                key={v}
+                                onClick={() => setSliderSelections(prev => ({ ...prev, [card.label]: vi }))}
+                                style={{
+                                  padding: '4px 10px',
+                                  borderRadius: 16,
+                                  fontSize: 13,
+                                  fontWeight: vi === selectedIdx ? 600 : 400,
+                                  fontVariantNumeric: 'tabular-nums',
+                                  background: vi === selectedIdx ? 'var(--text-primary)' : 'transparent',
+                                  color: vi === selectedIdx ? 'var(--bg-card)' : 'var(--text-muted)',
+                                  border: vi === selectedIdx ? 'none' : '1px solid var(--border)',
+                                  cursor: 'pointer',
+                                  transition: 'all 150ms',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {v}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            onClick={() => setSliderSelections(prev => ({ ...prev, [card.label]: Math.min(values.length - 1, selectedIdx + 1) }))}
+                            disabled={selectedIdx === values.length - 1}
+                            style={{
+                              width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border)',
+                              background: 'var(--bg-surface)', cursor: selectedIdx === values.length - 1 ? 'default' : 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                              opacity: selectedIdx === values.length - 1 ? 0.3 : 1, color: 'var(--text-primary)',
+                            }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M9 18l6-6-6-6" /></svg>
+                          </button>
+                        </div>
+                        {/* Outcome buttons for selected value */}
+                        <div style={{ display: 'flex', gap: 8, padding: '10px 16px 16px' }}>
+                          {currentEntry.markets.map((m) => {
+                            const cents = Math.round(m.price * 100);
+                            const isSelected = active?.marketId === m.id;
+                            return (
+                              <button
+                                key={m.id}
+                                onClick={() => setSelectedOutcome({ marketId: m.id, label: m.label, price: m.price })}
+                                style={{
+                                  flex: 1,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '10px 14px',
+                                  background: isSelected ? 'rgba(0,200,83,0.08)' : 'var(--bg-surface)',
+                                  color: 'var(--text-primary)',
+                                  border: isSelected ? '2px solid var(--yes-green)' : '1px solid var(--border)',
+                                  borderRadius: 8,
+                                  cursor: 'pointer',
+                                  fontSize: 14,
+                                  fontWeight: 700,
+                                  fontVariantNumeric: 'tabular-nums',
+                                  transition: 'border-color 150ms, background 150ms',
+                                }}
+                              >
+                                <span style={{ fontWeight: 500 }}>{m.label}</span>
+                                <span>{cents}¢</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // ── Regular card (Moneyline, BTTS, etc.) ──
+                  const mt = card.mt;
                   const isMoneyline = /moneyline|winner|match winner/i.test(mt.label) && !(/handicap|spread|O\/U|total|batter|toss|completed/i.test(mt.label));
+                  const isBTTS = /both teams to score/i.test(mt.label);
                   const isHandicap = /handicap|spread/i.test(mt.label);
                   const isTotal = /O\/U|total|over.?under/i.test(mt.label);
 
@@ -2583,35 +2724,43 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
 
                           if (isMoneyline) {
                             if (idx === 0) {
-                              // Team 1 — green
                               bg = 'var(--green-bg)';
                               color = 'var(--yes-green)';
                               border = 'none';
                               label = `${match.team1.abbr} ${cents}¢`;
                             } else if (idx === mt.markets.length - 1 && mt.markets.length <= 2) {
-                              // Team 2 — red (only for 2-way)
                               bg = 'var(--red-bg)';
                               color = 'var(--no-red)';
                               border = 'none';
                               label = `${match.team2.abbr} ${cents}¢`;
                             } else if (idx === mt.markets.length - 1 && mt.markets.length === 3) {
-                              // Team 2 — red (3-way: team1, draw, team2)
                               bg = 'var(--red-bg)';
                               color = 'var(--no-red)';
                               border = 'none';
                               label = `${match.team2.abbr} ${cents}¢`;
                             } else {
-                              // Draw — neutral
                               label = `DRAW ${cents}¢`;
                             }
+                          } else if (isBTTS) {
+                            // BTTS: Yes = green, No = red
+                            if (idx === 0) {
+                              bg = 'var(--green-bg)';
+                              color = 'var(--yes-green)';
+                              border = 'none';
+                              label = `YES ${cents}¢`;
+                            } else {
+                              bg = 'var(--red-bg)';
+                              color = 'var(--no-red)';
+                              border = 'none';
+                              label = `NO ${cents}¢`;
+                            }
                           } else if (isHandicap || isTotal) {
-                            // Spread/Total: outlined buttons with label + price
                             label = `${m.label}`;
                           }
 
                           if (isSelected) {
                             border = '2px solid var(--yes-green)';
-                            bg = isMoneyline ? bg : 'rgba(0,200,83,0.08)';
+                            bg = isMoneyline || isBTTS ? bg : 'rgba(0,200,83,0.08)';
                           }
 
                           return (
@@ -2622,7 +2771,7 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
                                 flex: 1,
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: isMoneyline ? 'center' : 'space-between',
+                                justifyContent: (isMoneyline || isBTTS) ? 'center' : 'space-between',
                                 padding: '10px 14px',
                                 background: bg, color, border,
                                 borderRadius: 8,
@@ -2633,7 +2782,7 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
                                 transition: 'border-color 150ms, background 150ms',
                               }}
                             >
-                              {isMoneyline ? (
+                              {(isMoneyline || isBTTS) ? (
                                 <span>{label}</span>
                               ) : (
                                 <>
