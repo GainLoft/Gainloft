@@ -52,61 +52,172 @@ export function useLiveMarkets(markets: Market[]): Market[] {
   });
 }
 
+const WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws/market';
+
 /**
- * Polls CLOB prices every intervalMs for a set of token IDs.
- * Returns a map of token_id → mid price.
- * Used by sports page for 1-second live price updates on match cards.
+ * Connects directly to Polymarket's CLOB websocket for instant price updates.
+ * Receives best_bid_ask and last_trade_price events pushed by the server.
+ * Falls back to REST polling if websocket fails.
  */
-export function useLivePrices(tokenIds: string[], intervalMs: number = 1000): PriceMap {
+export function useLivePrices(tokenIds: string[], _intervalMs: number = 1000): PriceMap {
   const [prices, setPrices] = useState<PriceMap>({});
-  const idsRef = useRef<string[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const idsRef = useRef<string[]>([]);
 
-  useEffect(() => { idsRef.current = tokenIds; }, [tokenIds]);
-
-  // Stable key to avoid re-running effect on every render
   const key = useMemo(() => {
     const sorted = [...tokenIds].sort();
     return sorted.length > 0 ? sorted.join(',') : '';
   }, [tokenIds]);
 
+  useEffect(() => { idsRef.current = tokenIds; }, [tokenIds]);
+
+  // Fetch initial prices via REST so cards show prices immediately
+  useEffect(() => {
+    if (!key) return;
+    const ids = idsRef.current;
+    if (ids.length === 0) return;
+    fetch('/api/polymarket/midpoints', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ids),
+    }).then(r => r.ok ? r.json() : {}).then((data: PriceMap) => {
+      if (mountedRef.current && Object.keys(data).length > 0) {
+        setPrices(prev => ({ ...prev, ...data }));
+      }
+    }).catch(() => {});
+  }, [key]);
+
   useEffect(() => {
     mountedRef.current = true;
     if (!key) return;
 
-    let timeoutId: ReturnType<typeof setTimeout>;
+    let retryDelay = 3000;
 
-    const poll = async () => {
-      const ids = idsRef.current;
-      if (ids.length === 0 || !mountedRef.current) return;
+    const connect = () => {
+      if (!mountedRef.current) return;
 
       try {
-        const res = await fetch('/api/polymarket/midpoints', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(ids),
-        });
-        if (res.ok && mountedRef.current) {
-          const data: PriceMap = await res.json();
-          setPrices(prev => {
-            const changed = Object.keys(data).some(k => prev[k]?.mid !== data[k]?.mid);
-            return changed ? { ...prev, ...data } : prev;
-          });
-        }
-      } catch { /* ignore */ }
+        const ws = new WebSocket(WS_URL);
+        wsRef.current = ws;
 
-      if (mountedRef.current) {
-        timeoutId = setTimeout(poll, intervalMs);
+        ws.onopen = () => {
+          retryDelay = 3000;
+          const ids = idsRef.current;
+          if (ids.length > 0) {
+            ws.send(JSON.stringify({
+              assets_ids: ids,
+              type: 'market',
+              custom_feature_enabled: true,
+            }));
+          }
+          // Heartbeat every 10s
+          pingRef.current = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) ws.send('PING');
+          }, 10_000);
+        };
+
+        ws.onmessage = (event) => {
+          if (!mountedRef.current) return;
+          if (event.data === 'PONG') return;
+
+          try {
+            const msgs = JSON.parse(event.data);
+            const list = Array.isArray(msgs) ? msgs : [msgs];
+
+            setPrices(prev => {
+              let updated = false;
+              const next = { ...prev };
+
+              for (const msg of list) {
+                // best_bid_ask: best bid/ask changed
+                if (msg.event_type === 'best_bid_ask' && msg.asset_id) {
+                  const bid = parseFloat(msg.best_bid || '0') || 0;
+                  const ask = parseFloat(msg.best_ask || '0') || 0;
+                  const mid = (bid + ask) / 2;
+                  if (next[msg.asset_id]?.mid !== mid) {
+                    next[msg.asset_id] = { bid, ask, mid };
+                    updated = true;
+                  }
+                }
+                // last_trade_price: a trade executed
+                else if (msg.event_type === 'last_trade_price' && msg.asset_id && msg.price) {
+                  const price = parseFloat(msg.price) || 0;
+                  const existing = next[msg.asset_id];
+                  if (!existing || Math.abs(existing.mid - price) > 0.001) {
+                    next[msg.asset_id] = { bid: existing?.bid ?? price, ask: existing?.ask ?? price, mid: price };
+                    updated = true;
+                  }
+                }
+                // price_change: orderbook update with best_bid/best_ask
+                else if (msg.event_type === 'price_change' && msg.price_changes) {
+                  for (const pc of msg.price_changes) {
+                    if (pc.asset_id && pc.best_bid != null && pc.best_ask != null) {
+                      const bid = parseFloat(pc.best_bid) || 0;
+                      const ask = parseFloat(pc.best_ask) || 0;
+                      const mid = (bid + ask) / 2;
+                      if (next[pc.asset_id]?.mid !== mid) {
+                        next[pc.asset_id] = { bid, ask, mid };
+                        updated = true;
+                      }
+                    }
+                  }
+                }
+              }
+
+              return updated ? next : prev;
+            });
+          } catch { /* ignore non-JSON */ }
+        };
+
+        ws.onclose = () => {
+          if (pingRef.current) clearInterval(pingRef.current);
+          if (mountedRef.current) {
+            reconnectRef.current = setTimeout(connect, retryDelay);
+            retryDelay = Math.min(retryDelay * 1.5, 30_000);
+          }
+        };
+
+        ws.onerror = () => {
+          ws.close();
+        };
+      } catch {
+        if (mountedRef.current) {
+          reconnectRef.current = setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 1.5, 30_000);
+        }
       }
     };
 
-    poll();
+    connect();
 
     return () => {
       mountedRef.current = false;
-      clearTimeout(timeoutId);
+      if (pingRef.current) clearInterval(pingRef.current);
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+      }
     };
-  }, [key, intervalMs]);
+  }, [key]);
+
+  // Handle token ID changes — subscribe to new tokens without reconnecting
+  const prevKeyRef = useRef(key);
+  useEffect(() => {
+    if (key === prevKeyRef.current) return;
+    prevKeyRef.current = key;
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN && idsRef.current.length > 0) {
+      ws.send(JSON.stringify({
+        assets_ids: idsRef.current,
+        type: 'market',
+        custom_feature_enabled: true,
+      }));
+    }
+  }, [key]);
 
   return prices;
 }
