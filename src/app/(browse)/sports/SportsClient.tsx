@@ -250,7 +250,7 @@ function sportColor(slug: string): string {
   return `hsl(${h}, 60%, 45%)`;
 }
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 200;
 
 /* ── Loading skeleton ── */
 function MatchSkeleton() {

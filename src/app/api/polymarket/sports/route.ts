@@ -21,7 +21,7 @@ export const preferredRegion = 'sin1';
  */
 
 const PAGE_SIZE_DEFAULT = 30;
-const PAGE_SIZE_MAX = 100;
+const PAGE_SIZE_MAX = 500;
 
 export async function GET(req: NextRequest) {
   try {
