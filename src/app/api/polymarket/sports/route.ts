@@ -188,7 +188,7 @@ async function getPolymarketDisplayOrder(): Promise<Map<string, number>> {
     const cached = cacheRows[0];
     const cacheAge = cached ? Date.now() - new Date(cached.updated_at).getTime() : Infinity;
 
-    if (cached && cacheAge < 15_000) {
+    if (cached && cacheAge < 5_000) {
       // Fresh enough — use DB cache
       const slugs: string[] = cached.data?.slugs || [];
       slugs.forEach((s, i) => order.set(s, i));
@@ -419,7 +419,7 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     return NextResponse.json(
       { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}), ...(topLeagueOrder ? { topLeagueOrder } : {}) },
-      { headers: { 'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=10' } }
+      { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (err) {
     console.error('[sports] Gamma API fetch failed:', err);
