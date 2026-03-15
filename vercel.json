@@ -7,6 +7,10 @@
     {
       "path": "/api/polymarket/logos/scrape",
       "schedule": "0 3 * * 1"
+    },
+    {
+      "path": "/api/polymarket/logos/scrape-polymarket",
+      "schedule": "0 */6 * * *"
     }
   ]
 }
