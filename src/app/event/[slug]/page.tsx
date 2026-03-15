@@ -2548,8 +2548,10 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
                   return mt.label.match(new RegExp(`Game ${gameNum}\\b`, 'i'));
                 });
 
-            // DEBUG: show market type count
-            console.log('[SportsMatchPage] market_types:', match.market_types.length, match.market_types.map(mt => mt.label));
+            // Log market types for debugging (remove later)
+            if (typeof window !== 'undefined') {
+              console.log('[SportsMatchPage] market_types count:', match.market_types.length, 'labels:', match.market_types.map(mt => mt.label).join(', '));
+            }
             if (tabMarkets.length === 0) {
               return (
                 <div style={{ padding: '48px 0', textAlign: 'center', fontSize: 14, color: 'var(--text-muted)' }}>
