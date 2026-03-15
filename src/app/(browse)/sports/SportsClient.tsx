@@ -905,10 +905,20 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         if (!grouped[dateKey]) { grouped[dateKey] = []; groupLabels[dateKey] = formatDateLabel(dateKey); }
         grouped[dateKey].push(eg);
       } else {
-        // Main view: group by league (like Polymarket)
-        const { slug, label } = getLeagueKey(eg);
-        if (!grouped[slug]) { grouped[slug] = []; groupLabels[slug] = label; }
-        grouped[slug].push(eg);
+        // Main view: group by parent sport (league name shown inside each card)
+        const sport = getSportForEvent(eg);
+        const sportLabel = (() => {
+          const labels: Record<string, string> = {
+            basketball: 'Basketball', soccer: 'Soccer', hockey: 'Hockey',
+            esports: 'Esports', tennis: 'Tennis', cricket: 'Cricket',
+            baseball: 'Baseball', football: 'Football', rugby: 'Rugby',
+            golf: 'Golf', f1: 'F1', ufc: 'UFC', boxing: 'Boxing',
+            chess: 'Chess', 'table-tennis': 'Table Tennis', pickleball: 'Pickleball',
+          };
+          return labels[sport] || labelMap[sport] || sport.charAt(0).toUpperCase() + sport.slice(1);
+        })();
+        if (!grouped[sport]) { grouped[sport] = []; groupLabels[sport] = sportLabel; }
+        grouped[sport].push(eg);
       }
     });
     if (isFiltered) {
@@ -1237,20 +1247,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                   const groupEvents = grouped[key];
                   const label = groupLabels[key] || key;
                   const hasLive = groupEvents.some(e => e.match?.status === 'live');
-                  // Derive parent sport for the group header icon
-                  const parentSport = SPORT_PARENT[key] || key;
-                  const parentSportLabel = (() => {
-                    const labels: Record<string, string> = {
-                      basketball: 'Basketball', soccer: 'Soccer', hockey: 'Hockey',
-                      esports: 'Esports', tennis: 'Tennis', cricket: 'Cricket',
-                      baseball: 'Baseball', football: 'Football', rugby: 'Rugby',
-                      golf: 'Golf', f1: 'F1', ufc: 'UFC', boxing: 'Boxing',
-                      chess: 'Chess', 'table-tennis': 'Table Tennis', pickleball: 'Pickleball',
-                    };
-                    return labels[parentSport] || parentSport.charAt(0).toUpperCase() + parentSport.slice(1);
-                  })();
-                  const showSportPrefix = parentSport !== key; // only show "Sport | League" when they differ
-                  const accentColor = sportColor(parentSport);
+                  const accentColor = sportColor(key);
                   return (
                     <div key={key} style={{ marginBottom: 20 }}>
                       <div style={{
@@ -1258,29 +1255,19 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                         marginBottom: 10, paddingBottom: 10,
                         borderBottom: '1px solid var(--border)',
                       }}>
-                        {/* Sport icon in tinted circle */}
+                        {/* Sport icon in tinted container */}
                         <div style={{
                           width: 30, height: 30, borderRadius: 8,
                           background: `${accentColor}18`,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           flexShrink: 0, color: accentColor,
                         }}>
-                          <SportIcon slug={parentSport} size={16} />
+                          <SportIcon slug={key} size={16} />
                         </div>
-                        {/* Sport category (muted) + League name (bold) */}
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flex: 1, minWidth: 0 }}>
-                          {showSportPrefix && (
-                            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                              {parentSportLabel}
-                            </span>
-                          )}
-                          {showSportPrefix && (
-                            <span style={{ fontSize: 13, color: 'var(--text-muted)', opacity: 0.4 }}>/</span>
-                          )}
-                          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>
-                            {label}
-                          </span>
-                        </div>
+                        {/* Sport name */}
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px', flex: 1 }}>
+                          {label}
+                        </span>
                         {/* Count pill */}
                         <span style={{
                           fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
