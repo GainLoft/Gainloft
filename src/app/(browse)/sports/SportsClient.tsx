@@ -897,6 +897,9 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     return { slug: 'other', label: eg.match?.league || 'Sports' };
   };
 
+  // Track insertion order so we can preserve backend's sort (matches Polymarket)
+  const groupOrder: string[] = [];
+
   if (viewTab === 'live') {
     displayEvents.forEach((eg) => {
       if (!eg.match) return;
@@ -904,12 +907,12 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         // Filtered view: group by date
         const startTime = eg.match.start_time || eg.end_date_iso || eg.created_at;
         const dateKey = new Date(startTime).toLocaleDateString('en-CA');
-        if (!grouped[dateKey]) { grouped[dateKey] = []; groupLabels[dateKey] = formatDateLabel(dateKey); }
+        if (!grouped[dateKey]) { grouped[dateKey] = []; groupLabels[dateKey] = formatDateLabel(dateKey); groupOrder.push(dateKey); }
         grouped[dateKey].push(eg);
       } else {
         // Main view: group by league (like Polymarket)
         const { slug, label } = getLeagueKey(eg);
-        if (!grouped[slug]) { grouped[slug] = []; groupLabels[slug] = label; }
+        if (!grouped[slug]) { grouped[slug] = []; groupLabels[slug] = label; groupOrder.push(slug); }
         grouped[slug].push(eg);
       }
     });
@@ -925,17 +928,11 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     // Main view: preserve API response order within each league (matches Polymarket)
   }
 
-  const sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
-    if (isFiltered) return a.localeCompare(b);
-    // Groups with live events always sort above groups with only upcoming events
-    const aHasLive = (grouped[a] || []).some(e => e.match?.status === 'live');
-    const bHasLive = (grouped[b] || []).some(e => e.match?.status === 'live');
-    if (aHasLive !== bHasLive) return aHasLive ? -1 : 1;
-    // Within same tier, sort by total group volume DESC
-    const aVol = (grouped[a] || []).reduce((sum, e) => sum + (e.volume || 0), 0);
-    const bVol = (grouped[b] || []).reduce((sum, e) => sum + (e.volume || 0), 0);
-    return bVol - aVol;
-  });
+  // Preserve the backend API order (already sorted like Polymarket):
+  // live groups first by volume, then upcoming groups by start time
+  const sortedGroupKeys = isFiltered
+    ? Object.keys(grouped).sort((a, b) => a.localeCompare(b))
+    : groupOrder.length > 0 ? groupOrder : Object.keys(grouped);
 
   /* ── Top leagues for sidebar quick-access (auto-scraped from Polymarket, fallback to curated) ── */
   const sidebarSubLeagues = useMemo(() => {
