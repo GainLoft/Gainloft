@@ -768,15 +768,21 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     return () => observer.disconnect();
   }, [hasMore, events.length, fetchPage]);
 
-  /* ── Auto-refresh event list every 60s (structure only, prices via live polling) ── */
+  /* ── Auto-refresh game stats every 15s (score, period, elapsed, ended) + structure every 60s ── */
+  const refreshCountRef = useRef(0);
   useEffect(() => {
     const interval = setInterval(() => {
       if (!fetchingRef.current && events.length > 0) {
+        refreshCountRef.current += 1;
+        const isFullRefresh = refreshCountRef.current % 4 === 0; // full refresh every 60s (4 × 15s)
         const controller = new AbortController();
         fetch(buildUrl(0), { signal: controller.signal })
           .then(r => r.json())
           .then((data: PageResponse) => {
-            if (data.taxonomy) { setTaxonomy(data.taxonomy); if (data.topLeagueOrder) setTopLeagueOrder(data.topLeagueOrder); }
+            if (isFullRefresh && data.taxonomy) {
+              setTaxonomy(data.taxonomy);
+              if (data.topLeagueOrder) setTopLeagueOrder(data.topLeagueOrder);
+            }
             setEvents(prev => {
               const newMap = new Map(data.events.map(e => [e.id, e]));
               return prev.map(e => newMap.get(e.id) || e);
@@ -784,7 +790,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
           })
           .catch(() => {});
       }
-    }, 60000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [buildUrl, events.length]);
 
