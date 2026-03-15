@@ -188,12 +188,8 @@ async function getPolymarketDisplayOrder(): Promise<Map<string, number>> {
     const cached = cacheRows[0];
     const cacheAge = cached ? Date.now() - new Date(cached.updated_at).getTime() : Infinity;
 
-    if (cached && cacheAge < 5_000) {
-      // Fresh enough — use DB cache
-      const slugs: string[] = cached.data?.slugs || [];
-      slugs.forEach((s, i) => order.set(s, i));
-      return order;
-    }
+    // Always scrape fresh — no cache TTL. DB is only used as fallback if scrape fails.
+    // This ensures every API response uses the absolute latest Polymarket display order.
 
     // Scrape Polymarket's SSR HTML
     const res = await fetch('https://polymarket.com/sports/live', {
