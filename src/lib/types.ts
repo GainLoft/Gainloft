@@ -67,6 +67,9 @@ export interface MatchInfo {
   event_image?: string;
   game_views?: number;
   score?: { team1: number; team2: number };
+  elapsed?: string;
+  period?: string;
+  ended?: boolean;
   best_of?: number;
   market_types: {
     id: string;

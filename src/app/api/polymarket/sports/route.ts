@@ -88,6 +88,15 @@ const ESPORTS_TAGS = new Set([
  *   (big lead in Q4) while the game is still live, so we DON'T filter those out.
  *   We rely on Polymarket's closed=false flag from the API instead.
  */
+/** Parse score string like "4-3" into { team1, team2 } */
+function parseScore(scoreStr: string): { team1: number; team2: number } | undefined {
+  const parts = scoreStr.split('-').map(s => parseInt(s.trim()));
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return { team1: parts[0], team2: parts[1] };
+  }
+  return undefined;
+}
+
 function isMatchSettled(ev: PMEvent): boolean {
   const markets = ev.markets || [];
   const endDate = ev.endDate ? new Date(ev.endDate) : null;
@@ -229,6 +238,12 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
       if (isApiLive) {
         matchInfo.status = 'live';
       }
+      // Extract game time data from Gamma API
+      const raw = ev as any;
+      if (raw.score) matchInfo.score = parseScore(raw.score);
+      if (raw.elapsed) matchInfo.elapsed = raw.elapsed;
+      if (raw.period) matchInfo.period = raw.period;
+      if (raw.ended) { matchInfo.status = 'final'; matchInfo.ended = true; }
 
       const nonPlaceholder = (ev.markets || []).filter(m => !isPlaceholderMarket(m));
       const moneyline = nonPlaceholder.find(m =>

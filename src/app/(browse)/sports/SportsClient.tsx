@@ -324,10 +324,19 @@ function MatchCard({
   );
 
   const leagueName = m.league;
-  const statusLabel = m.status === 'live'
-    ? (m.status_detail || '')
-    : m.status === 'final' ? 'FINAL'
-    : m.status_detail || new Date(m.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  // Build game time label: "2H · 64:00", "P3 · 08:41", "ENDED"
+  const gameTimeLabel = (() => {
+    if (m.ended || m.status === 'final') return 'ENDED';
+    if (m.status === 'live') {
+      const parts: string[] = [];
+      if (m.period) parts.push(m.period);
+      if (m.elapsed) parts.push(m.elapsed);
+      if (parts.length > 0) return parts.join(' · ');
+      return m.status_detail || '';
+    }
+    return m.status_detail || new Date(m.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  })();
+  const statusLabel = gameTimeLabel;
   // Use Polymarket's event image as the league/tournament logo
   const leagueLogo = m.event_image || event.image_url || '';
 
@@ -350,6 +359,12 @@ function MatchCard({
             <>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
               <span style={{ fontSize: 14, fontWeight: 700, color: '#ef4444' }}>LIVE</span>
+              {gameTimeLabel && <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>{gameTimeLabel}</span>}
+            </>
+          )}
+          {m.ended && (
+            <>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-muted)' }}>ENDED</span>
             </>
           )}
           <span style={{
