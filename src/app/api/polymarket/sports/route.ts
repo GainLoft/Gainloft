@@ -284,12 +284,35 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     // Deduplicate: live events first, then date-based events
     const seen = new Set<string>();
+    const seenSlugs = new Set<string>();
     const allEvents: PMEvent[] = [];
     for (const ev of liveResults) {
-      if (!seen.has(ev.id)) { seen.add(ev.id); allEvents.push(ev); }
+      if (!seen.has(ev.id)) { seen.add(ev.id); seenSlugs.add(ev.slug); allEvents.push(ev); }
     }
     for (const ev of dateResults) {
-      if (!seen.has(ev.id)) { seen.add(ev.id); allEvents.push(ev); }
+      if (!seen.has(ev.id)) { seen.add(ev.id); seenSlugs.add(ev.slug); allEvents.push(ev); }
+    }
+
+    // Phase 3: Fetch any events from Polymarket's display order that we missed.
+    // This closes the gap where an event is live on Polymarket but not yet in our Gamma API batch.
+    const earlyDisplayOrder = await getPolymarketDisplayOrder();
+    const missingSlugs = Array.from(earlyDisplayOrder.keys()).filter(s => !seenSlugs.has(s));
+    if (missingSlugs.length > 0) {
+      const missingEvents: PMEvent[] = (await Promise.allSettled(
+        missingSlugs.map(slug =>
+          fetch(`${GAMMA_API}/events?slug=${slug}&limit=1`, {
+            cache: 'no-store', headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(5000),
+          }).then(r => r.ok ? r.json() : []).catch(() => [])
+        )
+      )).flatMap(r => r.status === 'fulfilled' ? r.value : []);
+      for (const ev of missingEvents) {
+        if (ev.id && !seen.has(ev.id)) {
+          seen.add(ev.id); seenSlugs.add(ev.slug);
+          liveIds.add(ev.id); // treat as live since Polymarket shows it
+          allEvents.push(ev);
+        }
+      }
     }
 
     if (allEvents.length === 0) return null;
