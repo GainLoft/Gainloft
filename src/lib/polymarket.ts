@@ -456,12 +456,20 @@ export function buildMatchInfo(event: PMEvent): MatchInfo | null {
 
   // Determine league from title suffix or tag labels (auto, not hardcoded)
   const GENERIC_TAGS = new Set(['sports', 'esports', 'games']);
+  const SPORT_PARENT_TAGS = new Set(['soccer', 'cricket', 'rugby', 'tennis', 'hockey', 'baseball', 'basketball', 'american-football', 'mma', 'boxing', 'golf', 'formula-1', 'nascar', 'table-tennis', 'football']);
   let league = leagueInfo?.trim() || '';
   if (!league) {
-    // Use the tag label directly from Polymarket (e.g., tag.label = "League of Legends")
+    // Find the most specific tag: skip generic + sport-parent to get the actual league
     for (const t of (event.tags || [])) {
-      if (GENERIC_TAGS.has(t.slug)) continue;
+      if (GENERIC_TAGS.has(t.slug) || SPORT_PARENT_TAGS.has(t.slug)) continue;
       if (t.label) { league = t.label; break; }
+    }
+    // Fallback to sport-parent tag if no league-specific tag found
+    if (!league) {
+      for (const t of (event.tags || [])) {
+        if (GENERIC_TAGS.has(t.slug)) continue;
+        if (t.label) { league = t.label; break; }
+      }
     }
   }
   if (!league) league = sport || 'Sports';
