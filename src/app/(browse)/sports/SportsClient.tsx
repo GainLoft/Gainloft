@@ -958,11 +958,11 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh', color: 'var(--text-primary)' }}>
-      <div style={{ maxWidth: 1350, margin: '0 auto', padding: '0 24px' }}>
-        <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px' }}>
+        <div style={{ display: 'flex', gap: 24 }}>
 
           {/* ═══ LEFT SIDEBAR ═══ */}
-          <aside className="hidden lg:block" style={{ width: 210, flexShrink: 0, paddingTop: 4 }}>
+          <aside className="hidden lg:block" style={{ width: 200, flexShrink: 0, paddingTop: 24 }}>
             <nav className="hide-scrollbar" style={{ position: 'sticky', top: 68, display: 'flex', flexDirection: 'column', gap: 0, maxHeight: 'calc(100vh - 80px)', overflowY: 'auto', paddingBottom: 24 }}>
 
               {/* ── Live ── */}
@@ -1109,7 +1109,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
           </aside>
 
           {/* ═══ CENTER CONTENT ═══ */}
-          <div style={{ flex: 1, minWidth: 0, maxWidth: 756, paddingTop: 12, paddingLeft: 32, paddingBottom: 40 }}>
+          <div style={{ flex: 1, minWidth: 0, paddingTop: 12, paddingBottom: 40 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>
                 {activeFilter
