@@ -1250,18 +1250,43 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                     return labels[parentSport] || parentSport.charAt(0).toUpperCase() + parentSport.slice(1);
                   })();
                   const showSportPrefix = parentSport !== key; // only show "Sport | League" when they differ
+                  const accentColor = sportColor(parentSport);
                   return (
-                    <div key={key} style={{ marginBottom: 16 }}>
+                    <div key={key} style={{ marginBottom: 20 }}>
                       <div style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        marginBottom: 8, paddingBottom: 8,
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        marginBottom: 10, paddingBottom: 10,
                         borderBottom: '1px solid var(--border)',
                       }}>
-                        <SportIcon slug={parentSport} size={18} />
-                        <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.18px' }}>
-                          {showSportPrefix ? `${parentSportLabel} | ${label}` : label}
-                        </span>
-                        <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>
+                        {/* Sport icon in tinted circle */}
+                        <div style={{
+                          width: 30, height: 30, borderRadius: 8,
+                          background: `${accentColor}18`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          flexShrink: 0, color: accentColor,
+                        }}>
+                          <SportIcon slug={parentSport} size={16} />
+                        </div>
+                        {/* Sport category (muted) + League name (bold) */}
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flex: 1, minWidth: 0 }}>
+                          {showSportPrefix && (
+                            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                              {parentSportLabel}
+                            </span>
+                          )}
+                          {showSportPrefix && (
+                            <span style={{ fontSize: 13, color: 'var(--text-muted)', opacity: 0.4 }}>/</span>
+                          )}
+                          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>
+                            {label}
+                          </span>
+                        </div>
+                        {/* Count pill */}
+                        <span style={{
+                          fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
+                          background: 'var(--bg-surface)', borderRadius: 999,
+                          padding: '2px 10px', flexShrink: 0,
+                        }}>
                           {groupEvents.length}
                         </span>
                       </div>
