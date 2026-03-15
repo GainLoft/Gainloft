@@ -171,6 +171,39 @@ async function loadLogoMap(): Promise<Record<string, string> | undefined> {
   return undefined;
 }
 
+/** Scrape Polymarket's live page SSR HTML to get their exact display order (slug list).
+ *  This is the only way to match their proprietary server-side sorting algorithm. */
+let _displayOrderCache: { slugs: string[]; ts: number } | null = null;
+async function getPolymarketDisplayOrder(): Promise<Map<string, number>> {
+  const order = new Map<string, number>();
+  try {
+    // Cache for 2 minutes to avoid hammering Polymarket on every request
+    if (_displayOrderCache && Date.now() - _displayOrderCache.ts < 120_000) {
+      _displayOrderCache.slugs.forEach((s, i) => order.set(s, i));
+      return order;
+    }
+    const res = await fetch('https://polymarket.com/sports/live', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return order;
+    const html = await res.text();
+    // Extract event slugs from game link hrefs in display order
+    const regex = /href="\/sports\/[a-z0-9-]+\/([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-\d{4}-\d{2}-\d{2})"/gi;
+    const seen = new Set<string>();
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      const slug = match[1];
+      if (!seen.has(slug)) { seen.add(slug); order.set(slug, seen.size - 1); }
+    }
+    _displayOrderCache = { slugs: Array.from(seen), ts: Date.now() };
+    console.log(`[sports] Scraped Polymarket display order: ${order.size} events`);
+  } catch (err) {
+    console.error('[sports] Failed to scrape display order:', err);
+  }
+  return order;
+}
+
 /** Fetch live sports directly from Polymarket's Gamma API using event_date + live params (same data source as polymarket.com/sports) */
 async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
   try {
@@ -290,27 +323,31 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     const merged = mergeMatchEvents(rawEvents);
 
-    // Sort to match Polymarket's exact order:
-    // 1. API-confirmed live events in Polymarket's live API order
-    // 2. Heuristic-detected live events by volume DESC
-    // 3. Upcoming events by start time ASC
+    // Sort to match Polymarket's EXACT display order by scraping their SSR HTML.
+    // This is the root cause fix — their sort algorithm is proprietary (not volume, not API order).
+    const displayOrder = await getPolymarketDisplayOrder();
+
     const events = merged.sort((a, b) => {
-      const aApiLive = liveOrder.has(a.id);
-      const bApiLive = liveOrder.has(b.id);
       const aLive = a.match?.status === 'live';
       const bLive = b.match?.status === 'live';
 
-      // Tier 1: API-confirmed live (Polymarket's exact order)
-      if (aApiLive && bApiLive) return (liveOrder.get(a.id) || 0) - (liveOrder.get(b.id) || 0);
-      if (aApiLive && !bApiLive) return -1;
-      if (!aApiLive && bApiLive) return 1;
-
-      // Tier 2: Heuristic live by volume DESC
+      // Live events always before upcoming
       if (aLive && !bLive) return -1;
       if (!aLive && bLive) return 1;
-      if (aLive && bLive) return (b.volume || 0) - (a.volume || 0);
 
-      // Tier 3: Upcoming by start time ASC
+      if (aLive && bLive) {
+        // Among live events: use Polymarket's scraped display order
+        const aPos = displayOrder.get(a.slug) ?? 9999;
+        const bPos = displayOrder.get(b.slug) ?? 9999;
+        if (aPos !== bPos) return aPos - bPos;
+        // Fallback for events not in scraped order: use Gamma API order, then volume
+        const aApi = liveOrder.get(a.id) ?? 9999;
+        const bApi = liveOrder.get(b.id) ?? 9999;
+        if (aApi !== bApi) return aApi - bApi;
+        return (b.volume || 0) - (a.volume || 0);
+      }
+
+      // Upcoming: by start time ASC
       const aStart = startTimeMap.get(a.id) || a.end_date_iso || '';
       const bStart = startTimeMap.get(b.id) || b.end_date_iso || '';
       return aStart.localeCompare(bStart);

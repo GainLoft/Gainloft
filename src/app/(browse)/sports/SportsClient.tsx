@@ -957,14 +957,12 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         });
       }
     } else {
-      // Polymarket-exact: sort events by volume DESC, group consecutive same-league runs.
-      // Same league CAN appear multiple times if split by higher-volume events from other leagues.
+      // Preserve API order (backend already sorts to match Polymarket's exact display order).
+      // Group consecutive same-league runs — same league CAN appear multiple times.
       const liveEvents = displayEvents
-        .filter(eg => eg.match?.status === 'live')
-        .sort((a, b) => (b.volume || 0) - (a.volume || 0));
+        .filter(eg => eg.match?.status === 'live');
       const upcomingEvents = displayEvents
-        .filter(eg => eg.match && eg.match.status !== 'live' && eg.match.status !== 'final' && !(eg.match as any).ended)
-        .sort((a, b) => (b.volume || 0) - (a.volume || 0));
+        .filter(eg => eg.match && eg.match.status !== 'live' && eg.match.status !== 'final' && !(eg.match as any).ended);
 
       let gIdx = 0;
       let lastSlug = '';
