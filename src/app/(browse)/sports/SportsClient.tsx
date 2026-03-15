@@ -927,7 +927,11 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
 
   const sortedGroupKeys = Object.keys(grouped).sort((a, b) => {
     if (isFiltered) return a.localeCompare(b);
-    // Sort league groups by total group volume DESC (like Polymarket)
+    // Groups with live events always sort above groups with only upcoming events
+    const aHasLive = (grouped[a] || []).some(e => e.match?.status === 'live');
+    const bHasLive = (grouped[b] || []).some(e => e.match?.status === 'live');
+    if (aHasLive !== bHasLive) return aHasLive ? -1 : 1;
+    // Within same tier, sort by total group volume DESC
     const aVol = (grouped[a] || []).reduce((sum, e) => sum + (e.volume || 0), 0);
     const bVol = (grouped[b] || []).reduce((sum, e) => sum + (e.volume || 0), 0);
     return bVol - aVol;
