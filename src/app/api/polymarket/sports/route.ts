@@ -177,8 +177,8 @@ let _displayOrderCache: { slugs: string[]; ts: number } | null = null;
 async function getPolymarketDisplayOrder(): Promise<Map<string, number>> {
   const order = new Map<string, number>();
   try {
-    // Cache for 2 minutes to avoid hammering Polymarket on every request
-    if (_displayOrderCache && Date.now() - _displayOrderCache.ts < 120_000) {
+    // Cache for 15 seconds to stay in sync with Polymarket's display order
+    if (_displayOrderCache && Date.now() - _displayOrderCache.ts < 15_000) {
       _displayOrderCache.slugs.forEach((s, i) => order.set(s, i));
       return order;
     }
