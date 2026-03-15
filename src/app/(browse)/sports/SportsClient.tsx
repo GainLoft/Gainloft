@@ -716,7 +716,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     else setIsLoading(true);
 
     try {
-      const res = await fetch(buildUrl(offset), { signal: controller.signal });
+      const res = await fetch(buildUrl(offset), { signal: controller.signal, cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: PageResponse = await res.json();
 
@@ -779,17 +779,23 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         refreshCountRef.current += 1;
         const isFullRefresh = refreshCountRef.current % 4 === 0; // full refresh every 60s (4 × 15s)
         const controller = new AbortController();
-        fetch(buildUrl(0), { signal: controller.signal })
+        fetch(buildUrl(0), { signal: controller.signal, cache: 'no-store' })
           .then(r => r.json())
           .then((data: PageResponse) => {
             if (isFullRefresh && data.taxonomy) {
               setTaxonomy(data.taxonomy);
               if (data.topLeagueOrder) setTopLeagueOrder(data.topLeagueOrder);
             }
-            setEvents(prev => {
-              const newMap = new Map(data.events.map(e => [e.id, e]));
-              return prev.map(e => newMap.get(e.id) || e);
-            });
+            if (isFullRefresh) {
+              // Full refresh: use new API order (picks up new live events, removes ended ones)
+              setEvents(data.events);
+            } else {
+              // Quick refresh: update data in place, preserve order (no UI jumps)
+              setEvents(prev => {
+                const newMap = new Map(data.events.map(e => [e.id, e]));
+                return prev.map(e => newMap.get(e.id) || e);
+              });
+            }
           })
           .catch(() => {});
       }
