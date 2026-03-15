@@ -172,35 +172,66 @@ async function loadLogoMap(): Promise<Record<string, string> | undefined> {
 }
 
 /** Scrape Polymarket's live page SSR HTML to get their exact display order (slug list).
- *  This is the only way to match their proprietary server-side sorting algorithm. */
-let _displayOrderCache: { slugs: string[]; ts: number } | null = null;
+ *  Stored in DB (api_cache) so all Vercel serverless instances share the same order.
+ *  Scrapes fresh every 15s, falls back to DB cache if scrape fails. */
 async function getPolymarketDisplayOrder(): Promise<Map<string, number>> {
   const order = new Map<string, number>();
+  const DB_KEY = 'polymarket_display_order';
+
+  // 1. Try to scrape fresh from Polymarket (always attempt — 15s staleness check is in DB)
+  let freshSlugs: string[] | null = null;
   try {
-    // Cache for 15 seconds to stay in sync with Polymarket's display order
-    if (_displayOrderCache && Date.now() - _displayOrderCache.ts < 15_000) {
-      _displayOrderCache.slugs.forEach((s, i) => order.set(s, i));
+    // Check DB for freshness — skip scrape if updated < 15s ago
+    const { rows: cacheRows } = await pool.query(
+      `SELECT data, updated_at FROM api_cache WHERE key = $1`, [DB_KEY]
+    );
+    const cached = cacheRows[0];
+    const cacheAge = cached ? Date.now() - new Date(cached.updated_at).getTime() : Infinity;
+
+    if (cached && cacheAge < 15_000) {
+      // Fresh enough — use DB cache
+      const slugs: string[] = cached.data?.slugs || [];
+      slugs.forEach((s, i) => order.set(s, i));
       return order;
     }
+
+    // Scrape Polymarket's SSR HTML
     const res = await fetch('https://polymarket.com/sports/live', {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(6000),
     });
-    if (!res.ok) return order;
-    const html = await res.text();
-    // Extract event slugs from game link hrefs in display order
-    const regex = /href="\/sports\/[a-z0-9-]+\/([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-\d{4}-\d{2}-\d{2})"/gi;
-    const seen = new Set<string>();
-    let match;
-    while ((match = regex.exec(html)) !== null) {
-      const slug = match[1];
-      if (!seen.has(slug)) { seen.add(slug); order.set(slug, seen.size - 1); }
+    if (res.ok) {
+      const html = await res.text();
+      const regex = /href="\/sports\/[a-z0-9-]+\/([a-z0-9][a-z0-9-]*-\d{4}-\d{2}-\d{2})"/gi;
+      const seen = new Set<string>();
+      let match;
+      while ((match = regex.exec(html)) !== null) {
+        const slug = match[1];
+        if (!seen.has(slug)) seen.add(slug);
+      }
+      freshSlugs = Array.from(seen);
     }
-    _displayOrderCache = { slugs: Array.from(seen), ts: Date.now() };
-    console.log(`[sports] Scraped Polymarket display order: ${order.size} events`);
-  } catch (err) {
-    console.error('[sports] Failed to scrape display order:', err);
+  } catch { /* scrape failed — fall through to DB fallback */ }
+
+  // 2. Save fresh scrape to DB (or fall back to stale DB cache)
+  if (freshSlugs && freshSlugs.length > 0) {
+    try {
+      await pool.query(
+        `INSERT INTO api_cache (key, data, updated_at) VALUES ($1, $2::jsonb, NOW())
+         ON CONFLICT (key) DO UPDATE SET data = $2::jsonb, updated_at = NOW()`,
+        [DB_KEY, JSON.stringify({ slugs: freshSlugs })]
+      );
+    } catch { /* DB write failed — still use the scraped data */ }
+    freshSlugs.forEach((s, i) => order.set(s, i));
+  } else {
+    // Scrape failed — use whatever is in DB (even if stale)
+    try {
+      const { rows } = await pool.query(`SELECT data FROM api_cache WHERE key = $1`, [DB_KEY]);
+      const slugs: string[] = rows[0]?.data?.slugs || [];
+      slugs.forEach((s, i) => order.set(s, i));
+    } catch { /* no DB cache either */ }
   }
+
   return order;
 }
 
