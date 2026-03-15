@@ -1277,11 +1277,14 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
             {sel && selMatch && sel.markets?.[0] ? (() => {
               const rawTradeMarket = sel.markets.find(m => m.id === selectedMarketId) ?? sel.markets[0];
               // Merge live prices into trade market tokens so TradePanel stays in sync
+              // Find live Yes price, derive No price as complement
+              const yesToken = rawTradeMarket.tokens.find(t => t.outcome === 'Yes');
+              const liveYes = yesToken ? livePrices[yesToken.token_id] : null;
               const tradeMarket = {
                 ...rawTradeMarket,
                 tokens: rawTradeMarket.tokens.map(t => {
-                  const live = livePrices[t.token_id];
-                  if (live?.mid != null) return { ...t, price: live.mid };
+                  if (t.outcome === 'Yes' && liveYes?.mid != null) return { ...t, price: liveYes.mid };
+                  if (t.outcome === 'No' && liveYes?.mid != null) return { ...t, price: 1 - liveYes.mid };
                   return t;
                 }),
               };
@@ -1289,7 +1292,15 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                 <div style={{ position: 'sticky', top: 68 }}>
                   <div className="rounded-[12px]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', overflow: 'hidden' }}>
                     <OutcomeDropdown
-                      markets={sel.markets.map(m => ({ ...m, tokens: m.tokens.map(t => { const lp = livePrices[t.token_id]; return lp?.mid != null ? { ...t, price: lp.mid } : t; }) }))}
+                      markets={sel.markets.map(m => {
+                        const yt = m.tokens.find(t => t.outcome === 'Yes');
+                        const ly = yt ? livePrices[yt.token_id] : null;
+                        return { ...m, tokens: m.tokens.map(t => {
+                          if (t.outcome === 'Yes' && ly?.mid != null) return { ...t, price: ly.mid };
+                          if (t.outcome === 'No' && ly?.mid != null) return { ...t, price: 1 - ly.mid };
+                          return t;
+                        })};
+                      })}
                       selectedId={tradeMarket.id}
                       onSelect={(id) => setSelectedMarketId(id)}
                     />
