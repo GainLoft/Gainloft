@@ -950,8 +950,10 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         grouped[slug].push(eg);
       });
       // Pass 2: upcoming events go into their own league groups AFTER all live groups
+      // Skip ended/final events — they should not appear at all
       displayEvents.forEach((eg) => {
         if (!eg.match || eg.match.status === 'live') return;
+        if (eg.match.status === 'final' || (eg.match as any).ended) return;
         const { slug, label, sport } = getLeagueKey(eg);
         const upKey = `upcoming:${slug}`;
         if (!grouped[upKey]) { grouped[upKey] = []; groupLabels[upKey] = label; groupOrder.push(upKey); }

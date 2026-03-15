@@ -246,9 +246,11 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
       if (!isApiLive && isMatchSettled(ev)) continue;
       const matchInfo = buildMatchInfo(ev, logoMap);
       if (!matchInfo) continue;
-      if (!isApiLive && matchInfo.status === 'final') continue;
+      if (matchInfo.status === 'final') continue;
       // Force live status for events confirmed live by the API
-      if (isApiLive) {
+      // BUT respect buildMatchInfo's 'final' detection (settled prices mean match is over,
+      // even if the Gamma API still lists it as live due to lag)
+      if (isApiLive && matchInfo.status !== 'final') {
         matchInfo.status = 'live';
       }
       // Extract game time data from Gamma API
