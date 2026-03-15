@@ -2430,49 +2430,68 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
         {/* ═══ LEFT: main content ═══ */}
         <div style={{ flex: 1, minWidth: 0 }}>
 
-          {/* Match header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, padding: '24px 0 8px' }}>
+          {/* Match header (Polymarket-style) */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 32, padding: '24px 0 8px' }}>
             {/* Team 1 */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <img src={match.team1.logo} alt="" loading="lazy" style={{ width: 40, height: 40, objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                {match.team1.logo ? (
+                  <img src={match.team1.logo} alt="" loading="eager" style={{ width: 48, height: 48, objectFit: 'contain' }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.innerHTML = `<span style="font-size:18px;font-weight:700;color:var(--text-primary)">${match.team1.abbr}</span>`; }} />
+                ) : (
+                  <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>{match.team1.abbr}</span>
+                )}
               </div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{match.team1.abbr}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                {match.team1.name.length > 18 ? match.team1.abbr : match.team1.name}
+              </span>
             </div>
 
-            {/* Center: score or status */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 100, justifyContent: 'center' }}>
-              {match.score ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 36, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{match.score.team1}</span>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '0 4px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', color: match.status === 'live' ? 'var(--no-red)' : 'var(--text-muted)' }}>
-                      {match.status === 'final' ? 'FINAL' : match.status === 'live' ? 'LIVE' : 'VS'}
+            {/* Center: scores + live status */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 120, justifyContent: 'center' }}>
+              <span style={{ fontSize: 40, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                {match.score?.team1 ?? 0}
+              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                {match.status === 'live' ? (
+                  <>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#ef4444' }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', animation: 'pulse-live 2s ease-in-out infinite' }} />
+                      LIVE
                     </span>
-                  </div>
-                  <span style={{ fontSize: 36, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{match.score.team2}</span>
-                </div>
-              ) : match.status === 'live' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--no-red)' }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--no-red)' }} />
-                    LIVE
-                  </span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-muted)' }}>{dateStr}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{timeStr}</span>
-                </div>
-              )}
+                    {match.status_detail && (
+                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {match.status_detail}
+                      </span>
+                    )}
+                  </>
+                ) : match.status === 'final' ? (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>FINAL</span>
+                ) : (
+                  <>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>{dateStr}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeStr}</span>
+                  </>
+                )}
+              </div>
+              <span style={{ fontSize: 40, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                {match.score?.team2 ?? 0}
+              </span>
             </div>
 
             {/* Team 2 */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <img src={match.team2.logo} alt="" loading="lazy" style={{ width: 40, height: 40, objectFit: 'contain' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                {match.team2.logo ? (
+                  <img src={match.team2.logo} alt="" loading="eager" style={{ width: 48, height: 48, objectFit: 'contain' }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.innerHTML = `<span style="font-size:18px;font-weight:700;color:var(--text-primary)">${match.team2.abbr}</span>`; }} />
+                ) : (
+                  <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>{match.team2.abbr}</span>
+                )}
               </div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{match.team2.abbr}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                {match.team2.name.length > 18 ? match.team2.abbr : match.team2.name}
+              </span>
             </div>
           </div>
 
@@ -2537,45 +2556,98 @@ function SportsMatchPage({ event }: { event: EventGroup }) {
             }
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {tabMarkets.map((mt) => (
-                  <div key={mt.id} style={{ borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-card)', overflow: 'hidden' }}>
-                    {/* Card header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px 0' }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{mt.label}</span>
-                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{formatVolume(mt.volume)} Vol.</span>
+                {tabMarkets.map((mt) => {
+                  // Detect if this is a moneyline/winner market (team1 vs team2)
+                  const isMoneyline = /moneyline|winner|match winner/i.test(mt.label) && !(/handicap|spread|O\/U|total|batter|toss|completed/i.test(mt.label));
+                  const isHandicap = /handicap|spread/i.test(mt.label);
+                  const isTotal = /O\/U|total|over.?under/i.test(mt.label);
+
+                  return (
+                    <div key={mt.id} style={{ borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-card)', overflow: 'hidden' }}>
+                      {/* Card header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px 0' }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{mt.label}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{formatVolume(mt.volume)} Vol.</span>
+                      </div>
+                      {/* Outcome buttons — Polymarket colored style */}
+                      <div style={{ display: 'flex', gap: 8, padding: '12px 16px 16px' }}>
+                        {mt.markets.map((m, idx) => {
+                          const cents = Math.round(m.price * 100);
+                          const isSelected = active?.marketId === m.id;
+
+                          // Determine button style based on market type and position
+                          let bg = 'var(--bg-surface)';
+                          let color = 'var(--text-primary)';
+                          let border = '1px solid var(--border)';
+                          let label = m.label;
+
+                          if (isMoneyline) {
+                            if (idx === 0) {
+                              // Team 1 — green
+                              bg = 'var(--green-bg)';
+                              color = 'var(--yes-green)';
+                              border = 'none';
+                              label = `${match.team1.abbr} ${cents}¢`;
+                            } else if (idx === mt.markets.length - 1 && mt.markets.length <= 2) {
+                              // Team 2 — red (only for 2-way)
+                              bg = 'var(--red-bg)';
+                              color = 'var(--no-red)';
+                              border = 'none';
+                              label = `${match.team2.abbr} ${cents}¢`;
+                            } else if (idx === mt.markets.length - 1 && mt.markets.length === 3) {
+                              // Team 2 — red (3-way: team1, draw, team2)
+                              bg = 'var(--red-bg)';
+                              color = 'var(--no-red)';
+                              border = 'none';
+                              label = `${match.team2.abbr} ${cents}¢`;
+                            } else {
+                              // Draw — neutral
+                              label = `DRAW ${cents}¢`;
+                            }
+                          } else if (isHandicap || isTotal) {
+                            // Spread/Total: outlined buttons with label + price
+                            label = `${m.label}`;
+                          }
+
+                          if (isSelected) {
+                            border = '2px solid var(--yes-green)';
+                            bg = isMoneyline ? bg : 'rgba(0,200,83,0.08)';
+                          }
+
+                          return (
+                            <button
+                              key={m.id}
+                              onClick={() => setSelectedOutcome({ marketId: m.id, label: m.label, price: m.price })}
+                              style={{
+                                flex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: isMoneyline ? 'center' : 'space-between',
+                                padding: '10px 14px',
+                                background: bg, color, border,
+                                borderRadius: 8,
+                                cursor: 'pointer',
+                                fontSize: 14,
+                                fontWeight: 700,
+                                fontVariantNumeric: 'tabular-nums',
+                                transition: 'border-color 150ms, background 150ms',
+                              }}
+                            >
+                              {isMoneyline ? (
+                                <span>{label}</span>
+                              ) : (
+                                <>
+                                  <span style={{ fontWeight: 500 }}>{m.label}</span>
+                                  <span>{cents}¢</span>
+                                </>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    {/* Outcome buttons — full width side by side */}
-                    <div style={{ display: 'flex', gap: 8, padding: '12px 16px 16px' }}>
-                      {mt.markets.map((m) => {
-                        const cents = Math.round(m.price * 100);
-                        const isSelected = active?.marketId === m.id;
-                        return (
-                          <button
-                            key={m.id}
-                            onClick={() => {
-                              setSelectedOutcome({ marketId: m.id, label: m.label, price: m.price });
-                            }}
-                            style={{
-                              flex: 1,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              padding: '10px 14px',
-                              background: isSelected ? 'rgba(0,200,83,0.08)' : 'var(--bg-surface)',
-                              border: isSelected ? '2px solid var(--yes-green)' : '1px solid var(--border)',
-                              borderRadius: 8,
-                              cursor: 'pointer',
-                              transition: 'border-color 150ms, background 150ms',
-                            }}
-                          >
-                            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{m.label}</span>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: isSelected ? 'var(--yes-green)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{cents}¢</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             );
           })()}
