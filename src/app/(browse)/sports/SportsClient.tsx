@@ -327,9 +327,8 @@ function MatchCard({
   );
 
   const leagueName = m.league;
-  // Build game time label: "2H · 64:00", "P3 · 08:41", "ENDED"
+  // Game time for LIVE badge: "Q2 · 01:23", "P3 · 08:41"
   const gameTimeLabel = (() => {
-    if (m.ended || m.status === 'final') return 'ENDED';
     if (m.status === 'live') {
       const parts: string[] = [];
       if (m.period) parts.push(m.period);
@@ -337,9 +336,13 @@ function MatchCard({
       if (parts.length > 0) return parts.join(' · ');
       return m.status_detail || '';
     }
+    return '';
+  })();
+  // League badge suffix: only show start time for upcoming games
+  const leagueSuffix = (() => {
+    if (m.ended || m.status === 'final' || m.status === 'live') return '';
     return m.status_detail || new Date(m.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   })();
-  const statusLabel = gameTimeLabel;
   // Use Polymarket's event image as the league/tournament logo
   const leagueLogo = m.event_image || event.image_url || '';
 
@@ -386,7 +389,7 @@ function MatchCard({
                 loading="eager"
               />
             )}
-            {statusLabel ? `${leagueName} \u00b7 ${statusLabel}` : leagueName}
+            {leagueSuffix ? `${leagueName} \u00b7 ${leagueSuffix}` : leagueName}
           </span>
           <span style={{
             fontSize: 14, color: 'var(--text-muted)', fontWeight: 500,
