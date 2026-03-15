@@ -809,11 +809,12 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   }, [events, minVolume]);
 
   /* ── Build lookup sets from taxonomy for grouping ── */
-  const { leagueSlugs, sportSlugs, labelMap, leagueCounts } = useMemo(() => {
+  const { leagueSlugs, sportSlugs, labelMap, leagueCounts, leagueToSport } = useMemo(() => {
     const ls = new Set<string>();
     const ss = new Set<string>();
     const lm: Record<string, string> = {};
     const lc: Record<string, number> = {};
+    const l2s: Record<string, { slug: string; label: string }> = {};
     for (const sport of taxonomy) {
       ss.add(sport.slug);
       lm[sport.slug] = sport.label;
@@ -822,9 +823,10 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
         ls.add(league.slug);
         lm[league.slug] = league.label;
         lc[league.slug] = league.count;
+        l2s[league.slug] = { slug: sport.slug, label: sport.label };
       }
     }
-    return { leagueSlugs: ls, sportSlugs: ss, labelMap: lm, leagueCounts: lc };
+    return { leagueSlugs: ls, sportSlugs: ss, labelMap: lm, leagueCounts: lc, leagueToSport: l2s };
   }, [taxonomy]);
 
   /* ── Derive grouping tag for an event (like Polymarket) ── */
@@ -1237,19 +1239,10 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                   const groupEvents = grouped[key];
                   const label = groupLabels[key] || key;
                   const hasLive = groupEvents.some(e => e.match?.status === 'live');
-                  // Derive parent sport for the group header icon
-                  const parentSport = SPORT_PARENT[key] || key;
-                  const parentSportLabel = (() => {
-                    const labels: Record<string, string> = {
-                      basketball: 'Basketball', soccer: 'Soccer', hockey: 'Hockey',
-                      esports: 'Esports', tennis: 'Tennis', cricket: 'Cricket',
-                      baseball: 'Baseball', football: 'Football', rugby: 'Rugby',
-                      golf: 'Golf', f1: 'F1', ufc: 'UFC', boxing: 'Boxing',
-                      chess: 'Chess', 'table-tennis': 'Table Tennis', pickleball: 'Pickleball',
-                    };
-                    return labels[parentSport] || parentSport.charAt(0).toUpperCase() + parentSport.slice(1);
-                  })();
-                  const showSportPrefix = parentSport !== key; // only show "Sport | League" when they differ
+                  // Derive parent sport from taxonomy (dynamic), fallback to SPORT_PARENT (static)
+                  const taxonomySport = leagueToSport[key];
+                  const parentSport = taxonomySport?.slug || SPORT_PARENT[key] || key;
+                  const parentSportLabel = taxonomySport?.label || labelMap[parentSport] || parentSport.charAt(0).toUpperCase() + parentSport.slice(1);
                   const accentColor = sportColor(parentSport);
                   return (
                     <div key={key} style={{ marginBottom: 20 }}>
