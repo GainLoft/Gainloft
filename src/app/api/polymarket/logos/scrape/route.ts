@@ -239,7 +239,24 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Also support GET for manual trigger / cron
+// GET: debug lookup or trigger scrape
 export async function GET(req: NextRequest) {
+  const q = req.nextUrl.searchParams.get('q');
+  if (q) {
+    // Debug: search logo map for a key substring
+    try {
+      const { rows } = await pool.query(`SELECT data FROM api_cache WHERE key = 'team_logos_map'`);
+      if (!rows[0]?.data) return NextResponse.json({ error: 'No logo map cached' });
+      const map = rows[0].data as Record<string, string>;
+      const matches: Record<string, string> = {};
+      const lower = q.toLowerCase();
+      for (const [k, v] of Object.entries(map)) {
+        if (k.toLowerCase().includes(lower)) matches[k] = v;
+      }
+      return NextResponse.json({ query: q, matches, count: Object.keys(matches).length });
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+  }
   return POST(req);
 }
