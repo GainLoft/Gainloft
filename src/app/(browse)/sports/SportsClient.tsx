@@ -1273,7 +1273,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
           </div>
 
           {/* ═══ RIGHT TRADE PANEL ═══ */}
-          <div className="hidden lg:block" style={{ width: 372, flexShrink: 0, paddingTop: 12, marginLeft: 24 }}>
+          <div className="hidden lg:block" style={{ width: 372, flexShrink: 0, paddingTop: 12 }}>
             {sel && selMatch && sel.markets?.[0] ? (() => {
               const tradeMarket = sel.markets.find(m => m.id === selectedMarketId) ?? sel.markets[0];
               return (
