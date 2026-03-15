@@ -56,7 +56,8 @@ export async function GET(
       );
       if (hasSportsTag) {
         const pmEvent = reconstructPMEvent(eg, marketRows, tokensByMarket);
-        const matchInfo = buildMatchInfo(pmEvent);
+        const logoMap = await loadLogoMap();
+        const matchInfo = buildMatchInfo(pmEvent, logoMap);
         if (matchInfo) {
           eventGroup.match = matchInfo;
         }
@@ -174,6 +175,15 @@ export async function GET(
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Load cached team logo map from api_cache (scraped by /api/polymarket/logos/scrape) */
+async function loadLogoMap(): Promise<Record<string, string> | undefined> {
+  try {
+    const { rows } = await pool.query(`SELECT data FROM api_cache WHERE key = 'team_logos_map'`);
+    if (rows[0]?.data && typeof rows[0].data === 'object') return rows[0].data;
+  } catch { /* no logos available yet */ }
+  return undefined;
+}
 
 /** Extract numeric sort value from groupItemTitle.
  *  Handles: "72,000", "↑ 72,000", "60,000-62,000", "<60,000", ">78,000", "1.55"
