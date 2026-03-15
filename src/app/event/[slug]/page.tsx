@@ -2978,7 +2978,7 @@ interface RelatedEvent {
 function PolymarketLoader({ slug }: { slug: string }) {
   const { data: polyData, isLoading: polyLoading } = useSWR<{ type: 'market' | 'event_group'; data: Market | EventGroup; related?: RelatedEvent[] }>(
     slug ? `/api/polymarket/event/${slug}` : null,
-    (url: string) => fetch(url).then(r => r.ok ? r.json() : null),
+    (url: string) => fetch(url, { cache: 'no-store' }).then(r => r.ok ? r.json() : null),
     { refreshInterval: 15000, onError: () => {} }
   );
 
