@@ -1237,6 +1237,19 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                   const groupEvents = grouped[key];
                   const label = groupLabels[key] || key;
                   const hasLive = groupEvents.some(e => e.match?.status === 'live');
+                  // Derive parent sport for the group header icon
+                  const parentSport = SPORT_PARENT[key] || key;
+                  const parentSportLabel = (() => {
+                    const labels: Record<string, string> = {
+                      basketball: 'Basketball', soccer: 'Soccer', hockey: 'Hockey',
+                      esports: 'Esports', tennis: 'Tennis', cricket: 'Cricket',
+                      baseball: 'Baseball', football: 'Football', rugby: 'Rugby',
+                      golf: 'Golf', f1: 'F1', ufc: 'UFC', boxing: 'Boxing',
+                      chess: 'Chess', 'table-tennis': 'Table Tennis', pickleball: 'Pickleball',
+                    };
+                    return labels[parentSport] || parentSport.charAt(0).toUpperCase() + parentSport.slice(1);
+                  })();
+                  const showSportPrefix = parentSport !== key; // only show "Sport | League" when they differ
                   return (
                     <div key={key} style={{ marginBottom: 16 }}>
                       <div style={{
@@ -1244,14 +1257,9 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                         marginBottom: 8, paddingBottom: 8,
                         borderBottom: '1px solid var(--border)',
                       }}>
-                        {!isFiltered && (
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: sportColor(key), flexShrink: 0 }} />
-                        )}
-                        {isFiltered && hasLive && (
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
-                        )}
+                        <SportIcon slug={parentSport} size={18} />
                         <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.18px' }}>
-                          {label}
+                          {showSportPrefix ? `${parentSportLabel} | ${label}` : label}
                         </span>
                         <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>
                           {groupEvents.length}
