@@ -144,12 +144,20 @@ const SPORT_PARENT: Record<string, string> = {
   'champions-league': 'soccer', 'europa-league': 'soccer', 'liga-mx': 'soccer',
   'copa-america': 'soccer', euros: 'soccer', 'world-cup': 'soccer',
   'saudi-pro-league': 'soccer', concacaf: 'soccer',
+  'k-league': 'soccer', 'j-league': 'soccer', 'japan-j-league': 'soccer', 'japan-j2-league': 'soccer',
+  'a-league': 'soccer', 'chinese-super-league': 'soccer', 'brazilian-serie-a': 'soccer',
+  'brazil-serie-a': 'soccer', arg: 'soccer', 'serie-b': 'soccer', 'bundesliga-2': 'soccer',
+  'ligue-2': 'soccer', 'efl-championship': 'soccer', ere: 'soccer', rus: 'soccer', tur: 'soccer',
+  mex: 'soccer', nwsl: 'soccer', 'scottish-premiership': 'soccer', 'primeira-liga': 'soccer',
+  'belgian-pro-league': 'soccer', 'copa-libertadores': 'soccer', 'copa-sudamericana': 'soccer',
+  'concacaf-champions-league': 'soccer', 'afc-champions-league': 'soccer', uel: 'soccer',
+  'rainbow-six-siege': 'esports',
   'counter-strike-2': 'esports', 'league-of-legends': 'esports', 'dota-2': 'esports',
   valorant: 'esports', 'honor-of-kings': 'esports', 'rainbow-six': 'esports',
   'call-of-duty': 'esports', overwatch: 'esports', 'rocket-league': 'esports',
   atp: 'tennis', wta: 'tennis', 'us-open': 'tennis', wimbledon: 'tennis',
   'french-open': 'tennis', 'australian-open': 'tennis',
-  ipl: 'cricket', 't20-world-cup': 'cricket', 'the-ashes': 'cricket',
+  ipl: 'cricket', 't20-world-cup': 'cricket', 'the-ashes': 'cricket', 'international-cricket': 'cricket',
   mlb: 'baseball', npb: 'baseball',
   nfl: 'football', ncaaf: 'football', xfl: 'football', 'nfl-playoffs': 'football', 'super-bowl': 'football',
   'six-nations': 'rugby', 'rugby-world-cup': 'rugby', 'super-rugby': 'rugby',
@@ -942,9 +950,41 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     }
   }
 
-  const sortedGroupKeys = isFiltered
-    ? Object.keys(grouped).sort((a, b) => a.localeCompare(b))
-    : groupOrder.length > 0 ? groupOrder : Object.keys(grouped);
+  // Sort group keys to match Polymarket's frontend order:
+  // 1. Live groups sorted by parent sport total volume DESC, then league volume DESC within sport
+  // 2. Upcoming groups after all live groups, same sport/league volume order
+  const sortedGroupKeys = (() => {
+    if (isFiltered) return Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+
+    const liveKeys = groupOrder.filter(k => !k.startsWith('upcoming:'));
+    const upcomingKeys = groupOrder.filter(k => k.startsWith('upcoming:'));
+
+    // Calculate volume per group
+    const groupVol = (key: string) => (grouped[key] || []).reduce((s, e) => s + (e.volume || 0), 0);
+
+    // Get parent sport for a league key
+    const getSport = (key: string) => {
+      const leagueKey = key.replace(/^upcoming:/, '');
+      return leagueToSport[leagueKey]?.slug || SPORT_PARENT[leagueKey] || leagueKey;
+    };
+
+    // Sort a set of keys by: sport total volume DESC → league volume DESC within sport
+    const sortByPolymarketOrder = (keys: string[]) => {
+      // Accumulate total volume per parent sport
+      const sportVol: Record<string, number> = {};
+      for (const k of keys) {
+        const sport = getSport(k);
+        sportVol[sport] = (sportVol[sport] || 0) + groupVol(k);
+      }
+      return keys.sort((a, b) => {
+        const sa = getSport(a), sb = getSport(b);
+        if (sa !== sb) return (sportVol[sb] || 0) - (sportVol[sa] || 0);
+        return groupVol(b) - groupVol(a);
+      });
+    };
+
+    return [...sortByPolymarketOrder(liveKeys), ...sortByPolymarketOrder(upcomingKeys)];
+  })();
 
   /* ── Top leagues for sidebar quick-access (auto-scraped from Polymarket, fallback to curated) ── */
   const sidebarSubLeagues = useMemo(() => {
