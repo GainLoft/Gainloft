@@ -190,28 +190,25 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
       } catch { return []; }
     };
 
-    // Gamma API caps at 10 events per page — paginate in parallel
     // Use tag=sports to match Polymarket's sports page (includes esports, cricket, table-tennis etc.)
-    const liveOffsets = [0, 10, 20, 30, 40, 50, 60]; // up to 70 live sports events
-
-    // Phase 1: Live sports events (tag=sports matches Polymarket's sports page)
+    // Phase 1: Live sports events
     const liveResults: PMEvent[] = (await Promise.all(
-      liveOffsets.map(o => fetchPage({ closed: 'false', live: 'true', tag: 'sports', limit: '10', offset: String(o) }))
+      [0, 100].map(o => fetchPage({ closed: 'false', live: 'true', tag: 'sports', limit: '100', offset: String(o) }))
     )).flat();
 
-    // Phase 2: Recent past + today + tomorrow events
+    // Phase 2: Recent past + today + tomorrow events (using limit=100 to minimize requests)
     // Some tournaments (T10 League, Legends Cricket, etc.) set event_date to the tournament
     // start date, not individual match dates — so we fetch recent past dates too
     const yesterday = new Date(now.getTime() - 86400000).toISOString().split('T')[0];
     const dayBefore = new Date(now.getTime() - 2 * 86400000).toISOString().split('T')[0];
-    const todayOffsets = Array.from({ length: 40 }, (_, i) => i * 10); // 0..390
-    const recentOffsets = Array.from({ length: 10 }, (_, i) => i * 10); // 0..90
-    const tomorrowOffsets = Array.from({ length: 10 }, (_, i) => i * 10); // 0..90
     const dateResults: PMEvent[] = (await Promise.all([
-      ...todayOffsets.map(o => fetchPage({ closed: 'false', event_date: today, limit: '10', offset: String(o) })),
-      ...tomorrowOffsets.map(o => fetchPage({ closed: 'false', event_date: tomorrow, limit: '10', offset: String(o) })),
-      ...recentOffsets.map(o => fetchPage({ closed: 'false', event_date: yesterday, limit: '10', offset: String(o) })),
-      ...recentOffsets.map(o => fetchPage({ closed: 'false', event_date: dayBefore, limit: '10', offset: String(o) })),
+      // Today: up to 400 events (4 pages × 100)
+      ...[0, 100, 200, 300].map(o => fetchPage({ closed: 'false', event_date: today, limit: '100', offset: String(o) })),
+      // Tomorrow: up to 200 events
+      ...[0, 100].map(o => fetchPage({ closed: 'false', event_date: tomorrow, limit: '100', offset: String(o) })),
+      // Yesterday + day before: catch tournament events with past start dates
+      ...[0, 100].map(o => fetchPage({ closed: 'false', event_date: yesterday, limit: '100', offset: String(o) })),
+      ...[0, 100].map(o => fetchPage({ closed: 'false', event_date: dayBefore, limit: '100', offset: String(o) })),
     ])).flat();
 
     const results = [liveResults, dateResults];
