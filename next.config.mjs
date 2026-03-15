@@ -7,6 +7,9 @@ const nextConfig = {
       { protocol: 'https', hostname: '**.polymarket.com' },
       { protocol: 'https', hostname: '**.amazonaws.com' },
       { protocol: 'https', hostname: 'polymarket-upload.s3.us-east-2.amazonaws.com' },
+      { protocol: 'https', hostname: 'a.espncdn.com' },
+      { protocol: 'https', hostname: 'cdn.pandascore.co' },
+      { protocol: 'https', hostname: 'cdn-api.pandascore.co' },
     ],
     minimumCacheTTL: 86400, // Cache images for 24 hours
   },

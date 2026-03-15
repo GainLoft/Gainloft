@@ -430,7 +430,7 @@ function getPlayerCountry(name: string): string {
 }
 
 /** Detect if a Polymarket event is a sports/esports match and build MatchInfo */
-export function buildMatchInfo(event: PMEvent): MatchInfo | null {
+export function buildMatchInfo(event: PMEvent, logoMap?: Record<string, string>): MatchInfo | null {
   const hasSportsTag = event.tags?.some(t =>
     ['sports', 'esports'].includes(t.slug)
   );
@@ -474,21 +474,34 @@ export function buildMatchInfo(event: PMEvent): MatchInfo | null {
   }
   if (!league) league = sport || 'Sports';
 
-  // Team logos from Polymarket S3 bucket (available for NBA, NHL, MLB, NFL)
-  // Tennis uses country flags instead of team logos
-  const LOGO_LEAGUES = new Set(['NBA', 'NHL', 'MLB', 'NFL']);
-  const logoLeague = LOGO_LEAGUES.has(league) ? league : '';
+  // Team logos: try cached logoMap first, then Polymarket S3, then country flags
   const S3_BASE = 'https://polymarket-upload.s3.us-east-2.amazonaws.com';
   const isIndividualSport = event.tags?.some(t => INDIVIDUAL_SPORT_TAGS.has(t.slug));
-  let logo1 = logoLeague ? `${S3_BASE}/${logoLeague}+Team+Logos/${abbr1}.png` : '';
-  let logo2 = logoLeague ? `${S3_BASE}/${logoLeague}+Team+Logos/${abbr2}.png` : '';
-  if (!logoLeague) {
-    // Individual sports (tennis, UFC, etc.) or country-vs-country matchups (WBC, Olympics)
+
+  // Helper: look up logo from scraped map (league:ABBR, league:name, *:ABBR)
+  const lookupLogo = (teamName: string, teamAbbr: string): string => {
+    if (!logoMap) return '';
+    return logoMap[`${league}:${teamAbbr}`]
+      || logoMap[`${league}:${teamName.toLowerCase()}`]
+      || logoMap[`*:${teamAbbr}`]
+      || '';
+  };
+
+  let logo1 = lookupLogo(team1Name, abbr1);
+  let logo2 = lookupLogo(team2Name, abbr2);
+
+  // Fallback: Polymarket S3 bucket (NBA, NHL, MLB, NFL)
+  const S3_LEAGUES = new Set(['NBA', 'NHL', 'MLB', 'NFL']);
+  if (!logo1 && S3_LEAGUES.has(league)) logo1 = `${S3_BASE}/${league}+Team+Logos/${abbr1}.png`;
+  if (!logo2 && S3_LEAGUES.has(league)) logo2 = `${S3_BASE}/${league}+Team+Logos/${abbr2}.png`;
+
+  // Fallback: country flags for individual sports or country-vs-country
+  if (!logo1 || !logo2) {
     const c1 = getPlayerCountry(team1Name);
     const c2 = getPlayerCountry(team2Name);
     if (isIndividualSport || (c1 && c2)) {
-      if (c1) logo1 = `${S3_BASE}/country-flags/${c1}.png`;
-      if (c2) logo2 = `${S3_BASE}/country-flags/${c2}.png`;
+      if (!logo1 && c1) logo1 = `${S3_BASE}/country-flags/${c1}.png`;
+      if (!logo2 && c2) logo2 = `${S3_BASE}/country-flags/${c2}.png`;
     }
   }
 

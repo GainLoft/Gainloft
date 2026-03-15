@@ -162,6 +162,15 @@ function isPlaceholderMarket(pm: PMMarket): boolean {
 
 const GAMMA_API = 'https://gamma-api.polymarket.com';
 
+/** Load cached team logo map from api_cache (scraped by /api/polymarket/logos/scrape) */
+async function loadLogoMap(): Promise<Record<string, string> | undefined> {
+  try {
+    const { rows } = await pool.query(`SELECT data FROM api_cache WHERE key = 'team_logos_map'`);
+    if (rows[0]?.data && typeof rows[0].data === 'object') return rows[0].data;
+  } catch { /* no logos available yet */ }
+  return undefined;
+}
+
 /** Fetch live sports directly from Polymarket's Gamma API using event_date + live params (same data source as polymarket.com/sports) */
 async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
   try {
@@ -223,6 +232,9 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
       if (st) startTimeMap.set(ev.id, st);
     }
 
+    // Load cached logo map for team logos
+    const logoMap = await loadLogoMap();
+
     // Process through existing pipeline
     const rawEvents: EventGroup[] = [];
     for (const ev of allEvents) {
@@ -231,7 +243,7 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
       const isApiLive = liveIds.has(ev.id);
       // Trust Polymarket's live API — don't filter out API-confirmed live events
       if (!isApiLive && isMatchSettled(ev)) continue;
-      const matchInfo = buildMatchInfo(ev);
+      const matchInfo = buildMatchInfo(ev, logoMap);
       if (!matchInfo) continue;
       if (!isApiLive && matchInfo.status === 'final') continue;
       // Force live status for events confirmed live by the API
@@ -443,6 +455,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
   const tokensByMarket = await loadTokens(allMarketIds);
 
   // 5. Convert event_groups to PMEvent, filter, and build EventGroups
+  const logoMap = await loadLogoMap();
   const rawEvents: EventGroup[] = [];
 
   for (const eg of egRows) {
@@ -454,7 +467,7 @@ async function handleMatches(offset: number, limit: number, sportFilter: string,
     // Filter out settled matches
     if (isMatchSettled(pmEvent)) continue;
 
-    const matchInfo = buildMatchInfo(pmEvent);
+    const matchInfo = buildMatchInfo(pmEvent, logoMap);
     if (!matchInfo || matchInfo.status === 'final') continue;
 
     // Convert sub-markets: moneyline first, then others
@@ -986,6 +999,7 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
     }
 
     // Process event groups (same logic as handleMatches)
+    const logoMap = await loadLogoMap();
     const rawEvents: EventGroup[] = [];
 
     for (const eg of eventGroups) {
@@ -1001,7 +1015,7 @@ async function buildFromCache(cached: any, limit: number): Promise<NextResponse 
       const pmEvent = toPMEvent(eg, marketRows, tokensByMarket);
       if (isMatchSettled(pmEvent)) continue;
 
-      const matchInfo = buildMatchInfo(pmEvent);
+      const matchInfo = buildMatchInfo(pmEvent, logoMap);
       if (!matchInfo || matchInfo.status === 'final') continue;
 
       const nonPlaceholder = pmEvent.markets.filter(m => !isPlaceholderMarket(m));
