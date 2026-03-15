@@ -959,7 +959,7 @@ export async function fetchLivePrices(tokenIds: string[]): Promise<Record<string
 
   const sorted = [...tokenIds].sort();
   const cacheKey = `prices-live:${sorted.join(',')}`;
-  const cached = getCached<Record<string, { bid: number; ask: number; mid: number }>>(cacheKey, 5_000);
+  const cached = getCached<Record<string, { bid: number; ask: number; mid: number }>>(cacheKey, 1_000);
   if (cached) return cached;
 
   try {
