@@ -1312,27 +1312,49 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                     <div key={key} style={{ marginBottom: 20 }}>
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: 10,
-                        marginBottom: 10, paddingBottom: 10,
-                        borderBottom: '1px solid var(--border)',
+                        marginBottom: 10, padding: '8px 14px',
+                        borderRadius: 10,
+                        background: `linear-gradient(135deg, ${accentColor}12, ${accentColor}06)`,
+                        borderLeft: `3px solid ${accentColor}`,
                       }}>
-                        {/* Sport icon in tinted circle */}
+                        {/* League logo or sport icon */}
                         <div style={{
-                          width: 30, height: 30, borderRadius: 8,
-                          background: `${accentColor}18`,
+                          width: 28, height: 28, borderRadius: 6,
+                          background: `${accentColor}1A`,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          flexShrink: 0, color: accentColor,
+                          flexShrink: 0,
                         }}>
-                          <SportIcon slug={parentSport} size={16} />
+                          <LeagueIcon slug={leagueKey} size={18} />
                         </div>
-                        {/* Sport name only — league shown inside each card */}
-                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px', flex: 1 }}>
-                          {parentSportLabel}
-                        </span>
+                        {/* League + sport labels */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px', lineHeight: 1.2 }}>
+                            {label}
+                          </div>
+                          {label !== parentSportLabel && (
+                            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', marginTop: 1 }}>
+                              {parentSportLabel}
+                            </div>
+                          )}
+                        </div>
+                        {/* Live badge */}
+                        {hasLive && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, color: '#fff',
+                            background: '#ef4444', borderRadius: 4,
+                            padding: '2px 6px', letterSpacing: '0.5px',
+                            textTransform: 'uppercase', flexShrink: 0,
+                            animation: 'pulse-live 2s ease-in-out infinite',
+                          }}>
+                            LIVE
+                          </span>
+                        )}
                         {/* Count pill */}
                         <span style={{
-                          fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
+                          fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
                           background: 'var(--bg-surface)', borderRadius: 999,
-                          padding: '2px 10px', flexShrink: 0,
+                          padding: '2px 8px', flexShrink: 0,
+                          border: '1px solid var(--border)',
                         }}>
                           {groupEvents.length}
                         </span>
@@ -1438,6 +1460,10 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
           <style>{`
             @keyframes spin {
               to { transform: rotate(360deg); }
+            }
+            @keyframes pulse-live {
+              0%, 100% { opacity: 1; }
+              50% { opacity: 0.6; }
             }
             .hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
             .hide-scrollbar::-webkit-scrollbar { display: none; }
