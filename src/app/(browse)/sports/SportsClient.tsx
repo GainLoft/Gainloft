@@ -957,9 +957,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   const isEmpty = !isLoading && displayEvents.length === 0;
 
   return (
-    <div style={{ background: 'var(--bg)', minHeight: '100vh', color: 'var(--text-primary)' }}>
-      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px' }}>
-        <div style={{ display: 'flex', gap: 24 }}>
+    <div style={{ display: 'flex', gap: 24 }}>
 
           {/* ═══ LEFT SIDEBAR ═══ */}
           <aside className="hidden lg:block" style={{ width: 200, flexShrink: 0, paddingTop: 24 }}>
@@ -1306,16 +1304,14 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
               </div>
             )}
           </div>
-        </div>
-      </div>
 
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        .hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-      `}</style>
-    </div>
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+            .hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+            .hide-scrollbar::-webkit-scrollbar { display: none; }
+          `}</style>
+        </div>
   );
 }
