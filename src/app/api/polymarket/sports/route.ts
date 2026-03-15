@@ -419,7 +419,7 @@ async function fetchFromGammaAPI(limit: number): Promise<Response | null> {
 
     return NextResponse.json(
       { events: trimmed, hasMore, total, ...(taxonomy ? { taxonomy } : {}), ...(topLeagueOrder ? { topLeagueOrder } : {}) },
-      { headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30' } }
+      { headers: { 'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=10' } }
     );
   } catch (err) {
     console.error('[sports] Gamma API fetch failed:', err);

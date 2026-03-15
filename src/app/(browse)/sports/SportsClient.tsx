@@ -802,7 +802,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     const interval = setInterval(() => {
       if (!fetchingRef.current && events.length > 0) {
         refreshCountRef.current += 1;
-        const isFullRefresh = refreshCountRef.current % 4 === 0; // full refresh every 60s (4 × 15s)
+        const isFullRefresh = true; // always full refresh to keep sort order in sync with Polymarket
         const controller = new AbortController();
         fetch(buildUrl(0), { signal: controller.signal, cache: 'no-store' })
           .then(r => r.json())
