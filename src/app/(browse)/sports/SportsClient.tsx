@@ -1267,20 +1267,10 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                         }}>
                           <SportIcon slug={parentSport} size={16} />
                         </div>
-                        {/* Sport category (muted) + League name (bold) */}
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flex: 1, minWidth: 0 }}>
-                          {showSportPrefix && (
-                            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                              {parentSportLabel}
-                            </span>
-                          )}
-                          {showSportPrefix && (
-                            <span style={{ fontSize: 13, color: 'var(--text-muted)', opacity: 0.4 }}>/</span>
-                          )}
-                          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>
-                            {label}
-                          </span>
-                        </div>
+                        {/* Sport name only — league shown inside each card */}
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px', flex: 1 }}>
+                          {parentSportLabel}
+                        </span>
                         {/* Count pill */}
                         <span style={{
                           fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
