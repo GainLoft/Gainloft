@@ -282,7 +282,7 @@ function MatchCard({
   isSelected: boolean;
   onSelect: () => void;
   onOutcomeClick: (marketTypeLabel: string, outcomeIdx: number, marketId?: string) => void;
-  livePrices?: Record<string, { mid: number }>;
+  livePrices?: Record<string, { bid: number; ask: number; mid: number }>;
 }) {
   const m = event.match!;
   const t1 = m.team1;
@@ -291,24 +291,27 @@ function MatchCard({
   const ml = m.market_types.find((mt) => mt.label === 'Moneyline' || mt.label === 'Winner' || mt.label === 'Match Winner') ?? m.market_types[0];
 
   // Use live CLOB prices if available, otherwise fall back to stored prices
-  const getLivePrice = (marketTypeMarket: { id?: string; price: number }, fallback: number): number => {
-    if (!livePrices || !marketTypeMarket?.id) return fallback;
-    // The market_type market id maps to a market in the event; find the Yes token
+  // Returns { price, noLiquidity } — noLiquidity means bid=0 & ask=0 (settled/dead market)
+  const getLivePriceData = (marketTypeMarket: { id?: string; price: number }, fallback: number): { price: number; noLiquidity: boolean } => {
+    if (!livePrices || !marketTypeMarket?.id) return { price: fallback, noLiquidity: false };
     const baseId = marketTypeMarket.id.replace(/-\d+$/, '');
     const mkt = event.markets.find(m => m.id === baseId);
     if (mkt) {
       const yesToken = mkt.tokens.find(t => t.outcome === 'Yes');
       if (yesToken && livePrices[yesToken.token_id]) {
-        return livePrices[yesToken.token_id].mid;
+        const live = livePrices[yesToken.token_id];
+        return { price: live.mid, noLiquidity: live.bid === 0 && live.ask === 0 };
       }
     }
-    return fallback;
+    return { price: fallback, noLiquidity: false };
   };
 
-  const t1Price = getLivePrice(ml?.markets[0], ml?.markets[0]?.price ?? 0);
-  const t2Price = 1 - t1Price; // No price is complement of Yes
+  const t1Data = getLivePriceData(ml?.markets[0], ml?.markets[0]?.price ?? 0);
+  const t1Price = t1Data.price;
+  // Only use 1-Yes formula when there's actual liquidity; when bid=0 & ask=0, both sides are ~0
+  const t2Price = t1Data.noLiquidity ? 0 : (1 - t1Price);
   const is3Way = ml && ml.markets.length >= 3;
-  const drawPrice = is3Way ? getLivePrice(ml.markets[2], ml.markets[2]?.price ?? 0) : 0;
+  const drawPrice = is3Way ? getLivePriceData(ml.markets[2], ml.markets[2]?.price ?? 0).price : 0;
 
   // Find spread and O/U for additional rows (pick first of each type, skip settled)
   const isActive = (mt: typeof m.market_types[0]) => {
@@ -1295,11 +1298,13 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
               // Find live Yes price, derive No price as complement
               const yesToken = rawTradeMarket.tokens.find(t => t.outcome === 'Yes');
               const liveYes = yesToken ? livePrices[yesToken.token_id] : null;
+              // When bid=0 & ask=0, market has no liquidity (settled/dead) — don't use 1-mid formula
+              const yesNoLiquidity = liveYes != null && liveYes.bid === 0 && liveYes.ask === 0;
               const tradeMarket = {
                 ...rawTradeMarket,
                 tokens: rawTradeMarket.tokens.map(t => {
                   if (t.outcome === 'Yes' && liveYes?.mid != null) return { ...t, price: liveYes.mid };
-                  if (t.outcome === 'No' && liveYes?.mid != null) return { ...t, price: 1 - liveYes.mid };
+                  if (t.outcome === 'No' && liveYes?.mid != null) return { ...t, price: yesNoLiquidity ? 0 : 1 - liveYes.mid };
                   return t;
                 }),
               };
@@ -1310,9 +1315,10 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                       markets={sel.markets.map(m => {
                         const yt = m.tokens.find(t => t.outcome === 'Yes');
                         const ly = yt ? livePrices[yt.token_id] : null;
+                        const noLiq = ly != null && ly.bid === 0 && ly.ask === 0;
                         return { ...m, tokens: m.tokens.map(t => {
                           if (t.outcome === 'Yes' && ly?.mid != null) return { ...t, price: ly.mid };
-                          if (t.outcome === 'No' && ly?.mid != null) return { ...t, price: 1 - ly.mid };
+                          if (t.outcome === 'No' && ly?.mid != null) return { ...t, price: noLiq ? 0 : 1 - ly.mid };
                           return t;
                         })};
                       })}
