@@ -84,7 +84,7 @@ export async function GET(
         data: eventGroup,
         related,
       }, {
-        headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=20' },
+        headers: { 'Cache-Control': 'no-store' },
       });
     }
 
@@ -99,7 +99,7 @@ export async function GET(
       const fallback = await fetchFromPolymarket(slug);
       if (fallback) {
         return NextResponse.json(fallback, {
-          headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=20' },
+          headers: { 'Cache-Control': 'no-store' },
         });
       }
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
@@ -120,7 +120,7 @@ export async function GET(
         );
         const groupData = await groupRes.json();
         return NextResponse.json(groupData, {
-          headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=20' },
+          headers: { 'Cache-Control': 'no-store' },
         });
       }
     }
@@ -172,7 +172,7 @@ export async function GET(
       data: market,
       related,
     }, {
-      headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=20' },
+      headers: { 'Cache-Control': 'no-store' },
     });
   } catch (err) {
     console.error('Event fetch error:', err);
