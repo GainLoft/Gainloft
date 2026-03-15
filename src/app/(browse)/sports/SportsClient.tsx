@@ -907,22 +907,14 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   const groupOrder: string[] = [];
 
   if (viewTab === 'live') {
-    displayEvents.forEach((eg) => {
-      if (!eg.match) return;
-      if (isFiltered) {
-        // Filtered view: group by date
+    if (isFiltered) {
+      displayEvents.forEach((eg) => {
+        if (!eg.match) return;
         const startTime = eg.match.start_time || eg.end_date_iso || eg.created_at;
         const dateKey = new Date(startTime).toLocaleDateString('en-CA');
         if (!grouped[dateKey]) { grouped[dateKey] = []; groupLabels[dateKey] = formatDateLabel(dateKey); groupOrder.push(dateKey); }
         grouped[dateKey].push(eg);
-      } else {
-        // Main view: group by league (like Polymarket)
-        const { slug, label } = getLeagueKey(eg);
-        if (!grouped[slug]) { grouped[slug] = []; groupLabels[slug] = label; groupOrder.push(slug); }
-        grouped[slug].push(eg);
-      }
-    });
-    if (isFiltered) {
+      });
       for (const key of Object.keys(grouped)) {
         grouped[key].sort((a, b) => {
           const aTime = new Date(a.match!.start_time || a.end_date_iso || '').getTime();
@@ -930,12 +922,26 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
           return aTime - bTime;
         });
       }
+    } else {
+      // Like Polymarket: group LIVE events first by league, then upcoming events separately
+      // Pass 1: only live events (preserves Polymarket API order for groups)
+      displayEvents.forEach((eg) => {
+        if (!eg.match || eg.match.status !== 'live') return;
+        const { slug, label } = getLeagueKey(eg);
+        if (!grouped[slug]) { grouped[slug] = []; groupLabels[slug] = label; groupOrder.push(slug); }
+        grouped[slug].push(eg);
+      });
+      // Pass 2: upcoming events go into their own league groups AFTER all live groups
+      displayEvents.forEach((eg) => {
+        if (!eg.match || eg.match.status === 'live') return;
+        const { slug, label } = getLeagueKey(eg);
+        const upKey = `upcoming:${slug}`;
+        if (!grouped[upKey]) { grouped[upKey] = []; groupLabels[upKey] = label; groupOrder.push(upKey); }
+        grouped[upKey].push(eg);
+      });
     }
-    // Main view: preserve API response order within each league (matches Polymarket)
   }
 
-  // Preserve the backend API order (already sorted like Polymarket):
-  // live groups first by volume, then upcoming groups by start time
   const sortedGroupKeys = isFiltered
     ? Object.keys(grouped).sort((a, b) => a.localeCompare(b))
     : groupOrder.length > 0 ? groupOrder : Object.keys(grouped);
@@ -1246,9 +1252,11 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
                   const groupEvents = grouped[key];
                   const label = groupLabels[key] || key;
                   const hasLive = groupEvents.some(e => e.match?.status === 'live');
+                  // Strip upcoming: prefix for taxonomy lookup
+                  const leagueKey = key.replace(/^upcoming:/, '');
                   // Derive parent sport from taxonomy (dynamic), fallback to SPORT_PARENT (static)
-                  const taxonomySport = leagueToSport[key];
-                  const parentSport = taxonomySport?.slug || SPORT_PARENT[key] || key;
+                  const taxonomySport = leagueToSport[leagueKey];
+                  const parentSport = taxonomySport?.slug || SPORT_PARENT[leagueKey] || leagueKey;
                   const parentSportLabel = taxonomySport?.label || labelMap[parentSport] || parentSport.charAt(0).toUpperCase() + parentSport.slice(1);
                   const accentColor = sportColor(parentSport);
                   return (
