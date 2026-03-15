@@ -889,30 +889,39 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   const grouped: Record<string, EventGroup[]> = {};
   const groupLabels: Record<string, string> = {};
 
-  // Extract league key directly from event tags (like Polymarket grouping)
+  // Extract league key + parent sport directly from event tags (like Polymarket grouping)
   const GENERIC_TAG_SET = new Set(['sports', 'esports', 'games']);
   const SPORT_PARENT_SET = new Set(['soccer', 'cricket', 'rugby', 'tennis', 'hockey', 'baseball', 'basketball', 'american-football', 'mma', 'boxing', 'golf', 'formula-1', 'nascar', 'table-tennis', 'football']);
-  const getLeagueKey = (eg: EventGroup): { slug: string; label: string } => {
+  const getLeagueKey = (eg: EventGroup): { slug: string; label: string; sport: string } => {
     const tags = eg.tags || [];
-    // Find the most specific tag: not generic, not broad sport category
+    // First pass: find the sport-parent tag (soccer, cricket, esports, etc.)
+    let sportSlug = '';
+    for (const t of tags) {
+      const s = t.slug.toLowerCase();
+      if (SPORT_PARENT_SET.has(s)) { sportSlug = s; break; }
+      // 'esports' is in GENERIC but is also a sport parent — capture it
+      if (s === 'esports') { sportSlug = 'esports'; }
+    }
+    // Second pass: find the most specific tag (league-level)
     for (const t of tags) {
       const s = t.slug.toLowerCase();
       if (!GENERIC_TAG_SET.has(s) && !SPORT_PARENT_SET.has(s)) {
-        return { slug: s, label: LABEL_OVERRIDES[s] || labelMap[s] || t.label || s };
+        return { slug: s, label: LABEL_OVERRIDES[s] || labelMap[s] || t.label || s, sport: sportSlug || SPORT_PARENT[s] || s };
       }
     }
-    // Fall back: use the sport-level tag (for esports: counter-strike-2, dota-2)
+    // Fall back: use the sport-level tag itself
     for (const t of tags) {
       const s = t.slug.toLowerCase();
       if (!GENERIC_TAG_SET.has(s)) {
-        return { slug: s, label: LABEL_OVERRIDES[s] || labelMap[s] || t.label || s };
+        return { slug: s, label: LABEL_OVERRIDES[s] || labelMap[s] || t.label || s, sport: sportSlug || s };
       }
     }
-    return { slug: 'other', label: eg.match?.league || 'Sports' };
+    return { slug: 'other', label: eg.match?.league || 'Sports', sport: 'other' };
   };
 
-  // Track insertion order so we can preserve backend's sort (matches Polymarket)
+  // Track sport per group key (derived from event tags, not static lookup)
   const groupOrder: string[] = [];
+  const groupSport: Record<string, string> = {};
 
   if (viewTab === 'live') {
     if (isFiltered) {
@@ -932,19 +941,21 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
       }
     } else {
       // Like Polymarket: group LIVE events first by league, then upcoming events separately
-      // Pass 1: only live events (preserves Polymarket API order for groups)
+      // Pass 1: only live events
       displayEvents.forEach((eg) => {
         if (!eg.match || eg.match.status !== 'live') return;
-        const { slug, label } = getLeagueKey(eg);
+        const { slug, label, sport } = getLeagueKey(eg);
         if (!grouped[slug]) { grouped[slug] = []; groupLabels[slug] = label; groupOrder.push(slug); }
+        groupSport[slug] = sport;
         grouped[slug].push(eg);
       });
       // Pass 2: upcoming events go into their own league groups AFTER all live groups
       displayEvents.forEach((eg) => {
         if (!eg.match || eg.match.status === 'live') return;
-        const { slug, label } = getLeagueKey(eg);
+        const { slug, label, sport } = getLeagueKey(eg);
         const upKey = `upcoming:${slug}`;
         if (!grouped[upKey]) { grouped[upKey] = []; groupLabels[upKey] = label; groupOrder.push(upKey); }
+        groupSport[upKey] = sport;
         grouped[upKey].push(eg);
       });
     }
@@ -953,6 +964,7 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
   // Sort group keys to match Polymarket's frontend order:
   // 1. Live groups sorted by parent sport total volume DESC, then league volume DESC within sport
   // 2. Upcoming groups after all live groups, same sport/league volume order
+  // Uses groupSport (derived from event tags) — NOT static SPORT_PARENT lookup
   const sortedGroupKeys = (() => {
     if (isFiltered) return Object.keys(grouped).sort((a, b) => a.localeCompare(b));
 
@@ -962,22 +974,17 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
     // Calculate volume per group
     const groupVol = (key: string) => (grouped[key] || []).reduce((s, e) => s + (e.volume || 0), 0);
 
-    // Get parent sport for a league key
-    const getSport = (key: string) => {
-      const leagueKey = key.replace(/^upcoming:/, '');
-      return leagueToSport[leagueKey]?.slug || SPORT_PARENT[leagueKey] || leagueKey;
-    };
-
     // Sort a set of keys by: sport total volume DESC → league volume DESC within sport
     const sortByPolymarketOrder = (keys: string[]) => {
-      // Accumulate total volume per parent sport
+      // Accumulate total volume per parent sport (using tag-derived sport)
       const sportVol: Record<string, number> = {};
       for (const k of keys) {
-        const sport = getSport(k);
+        const sport = groupSport[k] || 'other';
         sportVol[sport] = (sportVol[sport] || 0) + groupVol(k);
       }
-      return keys.sort((a, b) => {
-        const sa = getSport(a), sb = getSport(b);
+      return [...keys].sort((a, b) => {
+        const sa = groupSport[a] || 'other';
+        const sb = groupSport[b] || 'other';
         if (sa !== sb) return (sportVol[sb] || 0) - (sportVol[sa] || 0);
         return groupVol(b) - groupVol(a);
       });
