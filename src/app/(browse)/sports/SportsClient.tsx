@@ -1275,12 +1275,21 @@ export default function SportsClient({ initialEvents, initialTaxonomy, initialHa
           {/* ═══ RIGHT TRADE PANEL ═══ */}
           <div className="hidden lg:block" style={{ width: 372, flexShrink: 0, paddingTop: 12 }}>
             {sel && selMatch && sel.markets?.[0] ? (() => {
-              const tradeMarket = sel.markets.find(m => m.id === selectedMarketId) ?? sel.markets[0];
+              const rawTradeMarket = sel.markets.find(m => m.id === selectedMarketId) ?? sel.markets[0];
+              // Merge live prices into trade market tokens so TradePanel stays in sync
+              const tradeMarket = {
+                ...rawTradeMarket,
+                tokens: rawTradeMarket.tokens.map(t => {
+                  const live = livePrices[t.token_id];
+                  if (live?.mid != null) return { ...t, price: live.mid };
+                  return t;
+                }),
+              };
               return (
                 <div style={{ position: 'sticky', top: 68 }}>
                   <div className="rounded-[12px]" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', overflow: 'hidden' }}>
                     <OutcomeDropdown
-                      markets={sel.markets}
+                      markets={sel.markets.map(m => ({ ...m, tokens: m.tokens.map(t => { const lp = livePrices[t.token_id]; return lp?.mid != null ? { ...t, price: lp.mid } : t; }) }))}
                       selectedId={tradeMarket.id}
                       onSelect={(id) => setSelectedMarketId(id)}
                     />
